@@ -45,7 +45,7 @@ class DatabaseSchema {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     course_id INTEGER NOT NULL,
     name TEXT NOT NULL,
-    device_app_id TEXT UNIQUE NOT NULL,
+    device_app_id TEXT NOT NULL,
     FOREIGN KEY(course_id) REFERENCES courses(id)
   );
   ''';

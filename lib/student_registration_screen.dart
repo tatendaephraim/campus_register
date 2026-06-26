@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import 'student.dart';
 import 'student_repository.dart';
@@ -10,6 +11,7 @@ import 'teacher.dart';
 import 'course.dart';
 import 'teacher_repository.dart';
 import 'course_repository.dart';
+import 'ui/design_tokens.dart';
 
 class StudentRegistrationScreen extends StatefulWidget {
   const StudentRegistrationScreen({super.key});
@@ -48,33 +50,48 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
 
     setState(() => _isLoading = true);
 
-    final deviceId = await _getDeviceId();
-    if (deviceId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not identify this device.')),
-      );
+    try {
+      final deviceId = await _getDeviceId();
+      if (deviceId == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not identify this device.')),
+          );
+        }
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      final student = await _studentRepo.registerDevice(
+        _codeController.text.trim(),
+        deviceId,
+      ).timeout(const Duration(seconds: 10));
+
       setState(() => _isLoading = false);
-      return;
-    }
 
-    final student = await _studentRepo.registerDevice(
-      _codeController.text.trim(),
-      deviceId,
-    );
-
-    setState(() => _isLoading = false);
-
-    if (student != null) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (context) => StudentDashboardScreen(student: student),
-        ),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Invalid registration code. Please try again.')),
-      );
+      if (student != null) {
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (context) => StudentDashboardScreen(student: student),
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Invalid registration code. Please try again.')),
+          );
+        }
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Registration error: ${e.toString().split('\n').first}')),
+        );
+      }
     }
   }
 
@@ -93,14 +110,8 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: isDark
-                ? [
-                    const Color(0xFF0F172A),
-                    const Color(0xFF1E293B),
-                  ]
-                : [
-                    const Color(0xFFF8FAFC),
-                    const Color(0xFFEEF2F6),
-                  ],
+                ? [AppColors.slate900, AppColors.slate800]
+                : [AppColors.slate50, const Color(0xFFEEF2F6)],
           ),
         ),
         child: Form(
@@ -111,44 +122,54 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Icon(
-                  Icons.person_pin_rounded,
-                  size: 80,
-                  color: Color(0xFF0EA5E9),
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  'Register Your Device',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white : const Color(0xFF1E293B),
+                Center(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.sky.withOpacity(0.15),
+                          blurRadius: 28,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: SvgPicture.asset(
+                      'assets/images/logo.svg',
+                      width: 90,
+                      height: 90,
+                    ),
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpace.xxl),
+                Text(
+                  'Register your device',
+                  textAlign: TextAlign.center,
+                  style: AppType.display(
+                    context,
+                    fontSize: 26,
+                    weight: FontWeight.w700,
+                    color: AppColors.textPrimary(isDark),
+                    letterSpacing: -0.7,
+                  ),
+                ),
+                const SizedBox(height: AppSpace.sm),
                 Text(
                   'Enter the registration code provided by your instructor to link this device to your student profile.',
                   textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
-                  ),
+                  style: AppType.body(context, fontSize: 14, color: AppColors.textSecondary(isDark)),
                 ),
-                const SizedBox(height: 36),
+                const SizedBox(height: AppSpace.xxxl + 4),
                 TextFormField(
                   controller: _codeController,
-                  decoration: InputDecoration(
-                    labelText: 'Registration Code',
-                    prefixIcon: const Icon(Icons.vpn_key_rounded),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    filled: true,
-                    fillColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                  decoration: const InputDecoration(
+                    labelText: 'Registration code',
+                    prefixIcon: Icon(Icons.vpn_key_rounded),
                   ),
+                  style: AppType.data(context, fontSize: 15),
                   validator: (value) =>
                       value!.isEmpty ? 'Please enter a code' : null,
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: AppSpace.xxl),
                 _isLoading
                     ? const Center(child: CircularProgressIndicator())
                     : Column(
@@ -157,26 +178,28 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
                           ElevatedButton(
                             onPressed: _handleRegistration,
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF0EA5E9),
+                              backgroundColor: AppColors.sky,
                               foregroundColor: Colors.white,
-                              shadowColor: const Color(0xFF0EA5E9).withOpacity(0.4),
+                              shadowColor: AppColors.sky.withOpacity(0.4),
                               elevation: 4,
                               padding: const EdgeInsets.symmetric(vertical: 16),
                             ),
-                            child: const Text('Register Device'),
+                            child: const Text('Register device'),
                           ),
-                          const SizedBox(height: 16),
-                          OutlinedButton.icon(
-                            icon: const Icon(Icons.developer_mode_rounded),
-                            label: const Text('Developer Login (Bypass Code)'),
-                            onPressed: _handleDevRegistration,
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFFF59E0B),
-                              side: const BorderSide(color: Color(0xFFF59E0B), width: 1.5),
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          if (true) ...[
+                            const SizedBox(height: AppSpace.lg),
+                            OutlinedButton.icon(
+                              icon: const Icon(Icons.developer_mode_rounded),
+                              label: const Text('Developer login (bypass code)'),
+                              onPressed: _handleDevRegistration,
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.amber,
+                                side: const BorderSide(color: AppColors.amber, width: 1.5),
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(borderRadius: AppRadius.smR),
+                              ),
                             ),
-                          ),
+                          ],
                         ],
                       ),
               ],
@@ -210,8 +233,8 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
         context: context,
         builder: (context) {
           return AlertDialog(
-            title: const Text('Select Student (Dev Bypass)'),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: Text('Select student (dev bypass)', style: AppType.display(context, fontSize: 17, weight: FontWeight.w600)),
+            shape: RoundedRectangleBorder(borderRadius: AppRadius.xlR),
             content: SizedBox(
               width: double.maxFinite,
               child: ListView.separated(

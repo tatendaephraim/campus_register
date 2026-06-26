@@ -149,4 +149,33 @@ class CourseRepository {
     );
     return List.generate(maps.length, (i) => Course.fromMap(maps[i]));
   }
+
+  /// Fetches all registered courses.
+  Future<List<Course>> getAllCourses() async {
+    // Try Supabase first
+    try {
+      final List<dynamic> response = await _supabase
+          .from('courses')
+          .select();
+      
+      final courses = response.map((item) => Course.fromMap(item as Map<String, dynamic>)).toList();
+
+      // Cache all locally
+      final db = await dbHelper.database;
+      final batch = db.batch();
+      for (var course in courses) {
+        batch.insert('courses', course.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await batch.commit(noResult: true);
+
+      return courses;
+    } catch (e) {
+      print('⚠️ Supabase fetch all courses error: $e');
+    }
+
+    // Fallback to SQLite
+    final db = await dbHelper.database;
+    final List<Map<String, dynamic>> maps = await db.query('courses');
+    return List.generate(maps.length, (i) => Course.fromMap(maps[i]));
+  }
 }

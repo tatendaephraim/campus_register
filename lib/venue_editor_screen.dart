@@ -5,10 +5,11 @@ import 'package:geolocator/geolocator.dart';
 
 import 'venue.dart' as app_models;
 import 'venue_repository.dart';
-import 'services/altitude_service.dart';
+import 'ui/design_tokens.dart';
 
 class VenueEditorScreen extends StatefulWidget {
-  const VenueEditorScreen({super.key});
+  final app_models.Venue? venue;
+  const VenueEditorScreen({super.key, this.venue});
 
   @override
   State<VenueEditorScreen> createState() => _VenueEditorScreenState();
@@ -33,7 +34,18 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
   @override
   void initState() {
     super.initState();
-    _initCurrentLocation();
+    if (widget.venue != null) {
+      _nameController.text = widget.venue!.name;
+      _altitude = widget.venue!.altitude;
+      if (widget.venue!.polygonCorners != null) {
+        _polygonCorners.addAll(
+          widget.venue!.polygonCorners!.map((c) => LatLng(c.latitude, c.longitude))
+        );
+      }
+      _zoomToVenue();
+    } else {
+      _initCurrentLocation();
+    }
   }
 
   @override
@@ -42,13 +54,22 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
     super.dispose();
   }
 
+  Future<void> _zoomToVenue() async {
+    try {
+      if (_polygonCorners.isNotEmpty) {
+        final controller = await _mapController.future;
+        controller.animateCamera(CameraUpdate.newLatLngZoom(_polygonCorners.first, 18));
+      }
+    } catch (_) {}
+  }
+
   Future<void> _initCurrentLocation() async {
     try {
       final pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
       final controller = await _mapController.future;
       controller.animateCamera(CameraUpdate.newLatLngZoom(LatLng(pos.latitude, pos.longitude), 18));
       setState(() {
-        _altitude = AltitudeService.instance.getCombinedAltitude(pos.altitude);
+        _altitude = pos.altitude;
       });
     } catch (e) {
       print("Could not get current location on open: $e");
@@ -59,7 +80,7 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
     setState(() => _isCapturingAltitude = true);
     try {
       final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.best);
-      final finalAltitude = AltitudeService.instance.getCombinedAltitude(position.altitude);
+      final finalAltitude = position.altitude;
       setState(() {
         _altitude = finalAltitude;
       });
@@ -67,7 +88,8 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Classroom altitude captured: ${_altitude.toStringAsFixed(1)}m'),
-            backgroundColor: Colors.green,
+            backgroundColor: AppColors.success,
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }
@@ -76,7 +98,8 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Could not capture altitude: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.danger,
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }
@@ -100,7 +123,8 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Added corner #${_polygonCorners.length} at GPS: ${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}'),
-            backgroundColor: Colors.green,
+            backgroundColor: AppColors.success,
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }
@@ -109,7 +133,8 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Could not get GPS location for corner: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.danger,
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }
@@ -124,7 +149,8 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Under system rules, a class geofence must have at least 3 corners marked.'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.danger,
+            behavior: SnackBarBehavior.floating,
           ),
         );
         return;
@@ -144,25 +170,27 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
       final modelCorners = _polygonCorners.map((c) => app_models.LatLng(c.latitude, c.longitude)).toList();
 
       final newVenue = app_models.Venue(
+        id: widget.venue?.id, // Preserve original ID!
         name: _nameController.text,
         latitude: centerLat,
         longitude: centerLng,
         altitude: _altitude,
         radius: 50.0, // Default horizontal tolerance radius
-        verticalTolerance: 5.0, // Height limit enforced to 5 meters
+        verticalTolerance: 12.0, // Height limit tolerance set to 12 meters
         polygonCorners: modelCorners,
       );
 
-      await _venueRepo.upsertVenue(newVenue);
+      final savedVenue = await _venueRepo.upsertVenue(newVenue);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Venue volumetric 3D geofence saved successfully!'),
-            backgroundColor: Colors.green,
+            backgroundColor: AppColors.success,
+            behavior: SnackBarBehavior.floating,
           ),
         );
-        Navigator.of(context).pop();
+        Navigator.of(context).pop(savedVenue); // Return the saved Venue!
       }
     }
   }
@@ -225,11 +253,11 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
                   top: 16,
                   left: 16,
                   child: Card(
-                    color: Colors.black.withOpacity(0.75),
+                    color: AppColors.slate950.withOpacity(0.8),
                     elevation: 4,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(borderRadius: AppRadius.mdR),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 8.0),
+                      padding: const EdgeInsets.symmetric(horizontal: AppSpace.md + 2, vertical: AppSpace.sm),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -238,10 +266,10 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
                             color: theme.colorScheme.secondary,
                             size: 18,
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: AppSpace.sm),
                           Text(
-                            'Corners: ${_polygonCorners.length} (Min 3)',
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                            'CORNERS: ${_polygonCorners.length} (MIN 3)',
+                            style: AppType.data(context, color: Colors.white, weight: FontWeight.w600, fontSize: 13),
                           ),
                         ],
                       ),
@@ -252,10 +280,10 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
             ),
           ),
           Container(
-            padding: const EdgeInsets.all(20.0),
+            padding: const EdgeInsets.all(AppSpace.xxl),
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF1E293B) : Colors.white,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              color: isDark ? AppColors.slate800 : Colors.white,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withOpacity(0.05),
@@ -271,23 +299,68 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
                 children: [
                   TextFormField(
                     controller: _nameController,
-                    decoration: InputDecoration(
-                      labelText: 'Classroom Name',
-                      prefixIcon: const Icon(Icons.meeting_room_rounded),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      filled: true,
-                      fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                    decoration: const InputDecoration(
+                      labelText: 'Classroom name',
+                      prefixIcon: Icon(Icons.meeting_room_rounded),
                     ),
                     validator: (value) => value!.isEmpty ? 'Please enter a classroom name' : null,
                   ),
-                  const SizedBox(height: 16),
+                  if (_polygonCorners.isNotEmpty) ...[
+                    const SizedBox(height: AppSpace.md),
+                    Container(
+                      padding: const EdgeInsets.all(AppSpace.md),
+                      decoration: BoxDecoration(
+                        color: isDark ? AppColors.slate900 : AppColors.slate100,
+                        borderRadius: AppRadius.mdR,
+                        border: Border.all(color: theme.colorScheme.secondary.withOpacity(0.2), width: 1),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.center_focus_strong_rounded,
+                            color: theme.colorScheme.secondary,
+                            size: 20,
+                          ),
+                          const SizedBox(width: AppSpace.md),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Centroid coordinates (live)',
+                                  style: AppType.body(context, fontSize: 11.5, weight: FontWeight.w700, color: AppColors.textSecondary(isDark), letterSpacing: 0.4),
+                                ),
+                                const SizedBox(height: 2),
+                                Builder(
+                                  builder: (context) {
+                                    double latSum = 0;
+                                    double lngSum = 0;
+                                    for (var corner in _polygonCorners) {
+                                      latSum += corner.latitude;
+                                      lngSum += corner.longitude;
+                                    }
+                                    final centerLat = latSum / _polygonCorners.length;
+                                    final centerLng = lngSum / _polygonCorners.length;
+                                    return Text(
+                                      '${centerLat.toStringAsFixed(6)}, ${centerLng.toStringAsFixed(6)}',
+                                      style: AppType.data(context, fontSize: 14, weight: FontWeight.w600, color: AppColors.textPrimary(isDark)),
+                                    );
+                                  }
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: AppSpace.lg),
                   Container(
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(AppSpace.md),
                     decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(12),
+                      color: isDark ? AppColors.slate900 : AppColors.slate100,
+                      borderRadius: AppRadius.mdR,
+                      border: Border.all(color: AppColors.indigo.withOpacity(0.15), width: 1),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -297,18 +370,18 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Floor Altitude: ${_altitude.toStringAsFixed(1)}m',
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: isDark ? Colors.white : const Color(0xFF1E293B),
-                                ),
+                                'Floor altitude',
+                                style: AppType.body(context, fontSize: 11.5, weight: FontWeight.w700, color: AppColors.textSecondary(isDark), letterSpacing: 0.4),
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                'Height Limit: 5m Ceiling',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
-                                ),
+                                '${_altitude.toStringAsFixed(1)}m',
+                                style: AppType.data(context, fontSize: 19, weight: FontWeight.w600, color: AppColors.textPrimary(isDark)),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '-8m to +12m volumetric tolerance band',
+                                style: AppType.body(context, fontSize: 11.5, color: AppColors.textTertiary(isDark)),
                               ),
                             ],
                           ),
@@ -318,30 +391,30 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
                             : ElevatedButton.icon(
                                 onPressed: _captureAltitude,
                                 icon: const Icon(Icons.height_rounded, size: 18),
-                                label: const Text('Capture Floor'),
+                                label: const Text('Capture floor'),
                                 style: ElevatedButton.styleFrom(
                                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  shape: RoundedRectangleBorder(borderRadius: AppRadius.smR),
                                 ),
                               ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: AppSpace.md),
                   _isCapturingCornerGps
                       ? const Center(child: CircularProgressIndicator())
                       : ElevatedButton.icon(
                           onPressed: _addCornerAtGps,
                           icon: const Icon(Icons.gps_fixed_rounded, size: 18),
-                          label: const Text('Add Corner at GPS Location'),
+                          label: const Text('Add corner at GPS location'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: theme.colorScheme.primary,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            shape: RoundedRectangleBorder(borderRadius: AppRadius.mdR),
                           ),
                         ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: AppSpace.md),
                   Row(
                     children: [
                       Expanded(
@@ -354,14 +427,14 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
                                   });
                                 },
                           icon: const Icon(Icons.undo_rounded, size: 18),
-                          label: const Text('Undo Last'),
+                          label: const Text('Undo last'),
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            shape: RoundedRectangleBorder(borderRadius: AppRadius.smR),
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: AppSpace.md),
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: _polygonCorners.isEmpty
@@ -372,12 +445,12 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
                                   });
                                 },
                           icon: const Icon(Icons.clear_all_rounded, size: 18),
-                          label: const Text('Clear All'),
+                          label: const Text('Clear all'),
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.red,
-                            side: const BorderSide(color: Colors.red),
+                            foregroundColor: AppColors.dangerDark,
+                            side: const BorderSide(color: AppColors.dangerDark),
                             padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            shape: RoundedRectangleBorder(borderRadius: AppRadius.smR),
                           ),
                         ),
                       ),

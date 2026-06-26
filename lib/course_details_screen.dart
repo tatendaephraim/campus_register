@@ -10,6 +10,8 @@ import 'manage_students_screen.dart';
 import 'venue_editor_screen.dart';
 import 'edit_course_screen.dart';
 import 'historical_report_screen.dart';
+import 'timetable_repository.dart';
+import 'ui/design_tokens.dart';
 
 class CourseDetailsScreen extends StatefulWidget {
   final Course course;
@@ -22,14 +24,30 @@ class CourseDetailsScreen extends StatefulWidget {
 class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
   final _venueRepo = VenueRepository();
   final _courseRepo = CourseRepository();
+  final _timetableRepo = TimetableRepository();
   late Future<Venue?> _venueFuture;
   late Course _currentCourse;
+  bool _hasTimetable = false;
 
   @override
   void initState() {
     super.initState();
     _currentCourse = widget.course;
     _loadVenue();
+    _checkTimetableStatus();
+  }
+
+  Future<void> _checkTimetableStatus() async {
+    try {
+      final slots = await _timetableRepo.getTimetableForCourse(_currentCourse.id!);
+      if (mounted) {
+        setState(() {
+          _hasTimetable = slots.isNotEmpty;
+        });
+      }
+    } catch (e) {
+      print('⚠️ Error checking timetable status: $e');
+    }
   }
 
   void _loadVenue() {
@@ -80,60 +98,51 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: isDark
-                ? [
-                    const Color(0xFF0F172A),
-                    const Color(0xFF1E293B),
-                  ]
-                : [
-                    const Color(0xFFF8FAFC),
-                    const Color(0xFFEEF2F6),
-                  ],
+                ? [AppColors.slate900, AppColors.slate800]
+                : [AppColors.slate50, const Color(0xFFEEF2F6)],
           ),
         ),
         child: ListView(
-          padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 24.0),
+          padding: const EdgeInsets.symmetric(horizontal: AppSpace.xl, vertical: AppSpace.xxl),
           children: [
             // Course Header Card
             Card(
               child: Padding(
-                padding: const EdgeInsets.all(20.0),
+                padding: const EdgeInsets.all(AppSpace.xl),
                 child: Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.all(AppSpace.md),
                       decoration: BoxDecoration(
                         color: theme.colorScheme.primary.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: theme.colorScheme.primary.withOpacity(0.15),
-                          width: 1,
-                        ),
+                        borderRadius: AppRadius.mdR,
+                        border: Border.all(color: theme.colorScheme.primary.withOpacity(0.15), width: 1),
                       ),
-                      child: Icon(
-                        Icons.school_rounded,
-                        color: theme.colorScheme.primary,
-                        size: 28,
-                      ),
+                      child: Icon(Icons.school_rounded, color: theme.colorScheme.primary, size: 28),
                     ),
-                    const SizedBox(width: 16),
+                    const SizedBox(width: AppSpace.lg),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'School/Institution',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
-                              fontWeight: FontWeight.bold,
+                            'SCHOOL / INSTITUTION',
+                            style: AppType.body(
+                              context,
+                              fontSize: 11,
+                              color: AppColors.textSecondary(isDark),
+                              weight: FontWeight.w700,
                               letterSpacing: 0.5,
                             ),
                           ),
-                          const SizedBox(height: 2),
+                          const SizedBox(height: 3),
                           Text(
-                            _currentCourse.schoolName ?? 'Not Specified',
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: isDark ? Colors.white : const Color(0xFF1E293B),
+                            _currentCourse.schoolName ?? 'Not specified',
+                            style: AppType.display(
+                              context,
+                              fontSize: 17,
+                              weight: FontWeight.w600,
+                              color: AppColors.textPrimary(isDark),
                             ),
                           ),
                         ],
@@ -143,26 +152,28 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
                 ),
               ),
             ),
-            
-            const SizedBox(height: 24),
-            
+
+            const SizedBox(height: AppSpace.xxl),
+
             // Venue Map Preview Card Header
             Row(
               children: [
                 Icon(Icons.spatial_tracking_rounded, size: 20, color: theme.colorScheme.secondary),
-                const SizedBox(width: 8),
+                const SizedBox(width: AppSpace.sm),
                 Text(
-                  'Volumetric Venue Boundaries',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white : const Color(0xFF1E293B),
-                    letterSpacing: -0.4,
+                  'Volumetric venue boundaries',
+                  style: AppType.display(
+                    context,
+                    fontSize: 17,
+                    weight: FontWeight.w600,
+                    color: AppColors.textPrimary(isDark),
+                    letterSpacing: -0.3,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 10),
-            
+            const SizedBox(height: AppSpace.md - 2),
+
             // Map Preview Card
             Card(
               clipBehavior: Clip.antiAlias,
@@ -170,38 +181,39 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
                 children: [
                   SizedBox(
                     height: 200,
-                    child: _buildVenueMap(),
+                    child: _buildVenueMap(context),
                   ),
                 ],
               ),
             ),
-            
-            const SizedBox(height: 28),
-            
+
+            const SizedBox(height: AppSpace.xxxl - 4),
+
             // Section Title
             Row(
               children: [
                 Icon(Icons.tune_rounded, size: 20, color: theme.colorScheme.primary),
-                const SizedBox(width: 8),
+                const SizedBox(width: AppSpace.sm),
                 Text(
-                  'Course Settings & Management',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white : const Color(0xFF1E293B),
-                    letterSpacing: -0.4,
+                  'Course settings & management',
+                  style: AppType.display(
+                    context,
+                    fontSize: 17,
+                    weight: FontWeight.w600,
+                    color: AppColors.textPrimary(isDark),
+                    letterSpacing: -0.3,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            
-            // Management Tiles
+            const SizedBox(height: AppSpace.md),
+
             _buildManagementTile(
               context,
-              title: 'Manage Students',
+              title: 'Manage students',
               subtitle: 'Add students and view registration codes',
               icon: Icons.people_outline_rounded,
-              color: const Color(0xFF6366F1),
+              color: theme.colorScheme.primary,
               onTap: () {
                 Navigator.of(context).push(MaterialPageRoute(
                   builder: (context) =>
@@ -209,42 +221,75 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
                 ));
               },
             ),
-            const SizedBox(height: 10),
-            
+            const SizedBox(height: AppSpace.md - 2),
+
             _buildManagementTile(
               context,
-              title: 'Set Weekly Timetable',
+              title: _hasTimetable ? 'Adjust weekly timetable' : 'Set weekly timetable',
               subtitle: 'Define the recurring class schedule',
               icon: Icons.calendar_month_outlined,
-              color: const Color(0xFFF59E0B),
-              onTap: () {
-                Navigator.of(context).push(MaterialPageRoute(
+              color: AppColors.amber,
+              onTap: () async {
+                await Navigator.of(context).push(MaterialPageRoute(
                   builder: (context) =>
                       SetTimetableScreen(course: _currentCourse),
                 ));
+                _checkTimetableStatus();
               },
             ),
-            const SizedBox(height: 10),
-            
+            const SizedBox(height: AppSpace.md - 2),
+
             _buildManagementTile(
               context,
-              title: 'Manage Classrooms (3D Geofence)',
+              title: 'Manage classrooms (3D geofence)',
               subtitle: 'Configure volumetric zones and height ceilings',
               icon: Icons.map_outlined,
-              color: const Color(0xFF10B981),
-              onTap: () {
-                Navigator.of(context).push(MaterialPageRoute(
-                  builder: (context) => const VenueEditorScreen(),
-                ));
+              color: AppColors.success,
+              onTap: () async {
+                final currentVenue = await _venueFuture;
+                if (!mounted) return;
+                
+                final savedVenue = await Navigator.of(context).push<Venue>(
+                  MaterialPageRoute(
+                    builder: (context) => VenueEditorScreen(venue: currentVenue),
+                  ),
+                );
+
+                if (savedVenue != null && mounted) {
+                  if (_currentCourse.venueId != savedVenue.id) {
+                    final updatedCourse = Course(
+                      id: _currentCourse.id,
+                      teacherId: _currentCourse.teacherId,
+                      name: _currentCourse.name,
+                      schoolName: _currentCourse.schoolName,
+                      startDate: _currentCourse.startDate,
+                      endDate: _currentCourse.endDate,
+                      venueId: savedVenue.id,
+                    );
+                    await _courseRepo.updateCourse(updatedCourse);
+                    if (mounted) {
+                      setState(() {
+                        _currentCourse = updatedCourse;
+                        _loadVenue();
+                      });
+                    }
+                  } else {
+                    if (mounted) {
+                      setState(() {
+                        _loadVenue();
+                      });
+                    }
+                  }
+                }
               },
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpace.md),
             const Divider(),
-            const SizedBox(height: 12),
-            
+            const SizedBox(height: AppSpace.md),
+
             _buildManagementTile(
               context,
-              title: 'Historical Report & Sync',
+              title: 'Historical report & sync',
               subtitle: 'View attendance records and sync sheets',
               icon: Icons.bar_chart_outlined,
               color: const Color(0xFFEC4899),
@@ -269,80 +314,69 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
     required Color color,
     required VoidCallback onTap,
   }) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Card(
       elevation: 0,
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: BorderSide(
-          color: isDark ? Colors.white.withOpacity(0.06) : const Color(0xFFE2E8F0),
-          width: 1,
-        ),
+        borderRadius: AppRadius.lgR,
+        side: BorderSide(color: AppColors.border(isDark), width: 1),
       ),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+        contentPadding: const EdgeInsets.symmetric(horizontal: AppSpace.xl - 2, vertical: AppSpace.sm + 2),
         leading: Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(AppSpace.md),
           decoration: BoxDecoration(
             color: color.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: color.withOpacity(0.15),
-              width: 1,
-            ),
+            borderRadius: AppRadius.mdR,
+            border: Border.all(color: color.withOpacity(0.15), width: 1),
           ),
           child: Icon(icon, color: color, size: 24),
         ),
         title: Text(
           title,
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-            color: isDark ? Colors.white : const Color(0xFF1E293B),
-            fontSize: 16,
+          style: AppType.display(
+            context,
+            fontSize: 15.5,
+            weight: FontWeight.w600,
+            color: AppColors.textPrimary(isDark),
           ),
         ),
         subtitle: Text(
           subtitle,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
-          ),
+          style: AppType.body(context, fontSize: 12.5, color: AppColors.textSecondary(isDark)),
         ),
         trailing: Container(
           padding: const EdgeInsets.all(6),
           decoration: BoxDecoration(
-            color: isDark ? Colors.white.withOpacity(0.04) : Colors.grey[100],
+            color: isDark ? Colors.white.withOpacity(0.04) : AppColors.slate100,
             shape: BoxShape.circle,
           ),
-          child: Icon(
-            Icons.arrow_forward_ios_rounded,
-            size: 12,
-            color: color,
-          ),
+          child: Icon(Icons.arrow_forward_ios_rounded, size: 12, color: color),
         ),
         onTap: onTap,
       ),
     );
   }
 
-  Widget _buildVenueMap() {
+  Widget _buildVenueMap(BuildContext context) {
+    final theme = Theme.of(context);
     return FutureBuilder<Venue?>(
       future: _venueFuture,
       builder: (context, snapshot) {
         if (_currentCourse.venueId == null) {
           return Container(
-            color: Colors.grey.withOpacity(0.05),
-            child: const Center(
+            color: AppColors.slate400.withOpacity(0.06),
+            child: Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.location_off_rounded, color: Colors.grey, size: 36),
-                  SizedBox(height: 8),
+                  Icon(Icons.location_off_rounded, color: AppColors.slate400, size: 36),
+                  const SizedBox(height: AppSpace.sm),
                   Text(
-                    'No geofenced venue set for this course.',
-                    style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+                    'No geofenced venue set for this course',
+                    style: AppType.body(context, color: AppColors.slate500, weight: FontWeight.w600),
                   ),
                 ],
               ),
@@ -354,8 +388,10 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
         }
         if (!snapshot.hasData || snapshot.data == null) {
           return Container(
-            color: Colors.grey.withOpacity(0.05),
-            child: const Center(child: Text('Venue details not found.')),
+            color: AppColors.slate400.withOpacity(0.06),
+            child: Center(
+              child: Text('Venue details not found', style: AppType.body(context, color: AppColors.slate500)),
+            ),
           );
         }
 
@@ -381,8 +417,8 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
                     circleId: CircleId(venue.id.toString()),
                     center: center,
                     radius: venue.radius,
-                    fillColor: const Color(0xFF6366F1).withOpacity(0.12),
-                    strokeColor: const Color(0xFF6366F1),
+                    fillColor: theme.colorScheme.primary.withOpacity(0.12),
+                    strokeColor: theme.colorScheme.primary,
                     strokeWidth: 2,
                   )
                 },
@@ -393,8 +429,8 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
                     points: venue.polygonCorners!
                         .map((c) => LatLng(c.latitude, c.longitude))
                         .toList(),
-                    fillColor: const Color(0xFF6366F1).withOpacity(0.12),
-                    strokeColor: const Color(0xFF6366F1),
+                    fillColor: theme.colorScheme.primary.withOpacity(0.12),
+                    strokeColor: theme.colorScheme.primary,
                     strokeWidth: 2,
                   )
                 }

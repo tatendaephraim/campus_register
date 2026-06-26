@@ -9,7 +9,7 @@ import 'database_schema.dart';
 /// and provides a single point of access to the database instance.
 class DatabaseHelper {
   static const _databaseName = "CampusRegister.db";
-  static const _databaseVersion = 2;
+  static const _databaseVersion = 3;
 
   // Make this a singleton class.
   DatabaseHelper._privateConstructor();

@@ -119,4 +119,24 @@ class VenueRepository {
     }
     return null;
   }
+
+  /// Deletes a venue from both the database and Supabase.
+  Future<void> deleteVenue(int venueId) async {
+    final db = await dbHelper.database;
+
+    // 1. Try deleting from Supabase
+    try {
+      await _supabase.from('venues').delete().eq('id', venueId);
+      print('✅ Deleted Venue from Supabase: $venueId');
+    } catch (e) {
+      print('⚠️ Supabase Venue delete error: $e');
+    }
+
+    // 2. Delete locally
+    await db.delete(
+      'venues',
+      where: 'id = ?',
+      whereArgs: [venueId],
+    );
+  }
 }

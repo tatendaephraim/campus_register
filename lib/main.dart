@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'database_helper.dart';
@@ -9,6 +10,11 @@ import 'student.dart';
 import 'role_selection_screen.dart';
 import 'student_dashboard_screen.dart';
 import 'student_repository.dart';
+import 'teacher_dashboard_screen.dart';
+import 'teacher_repository.dart';
+import 'onboarding_screen.dart';
+import 'ui/design_tokens.dart';
+import 'services/theme_service.dart';
 
 void main() async {
   // Ensure Flutter bindings are initialized before using plugins.
@@ -20,17 +26,47 @@ void main() async {
     anonKey: 'sb_publishable_CnvAQvdeO82XS52OALVx5A_H1apCkpi',
   );
 
+  // Initialize Theme Service
+  await ThemeService.instance.init();
+
   // Determine the initial screen.
   final Widget initialScreen = await _getInitialScreen();
 
   runApp(CampusRegisterApp(initialScreen: initialScreen));
 }
 
-/// Checks if a student is registered on this device and returns the appropriate
+/// Checks if a student is registered on this device or a teacher is logged in, and returns the appropriate
 /// starting screen.
 Future<Widget> _getInitialScreen() async {
   // Initialize the database. This will create the .db file and tables on first run.
   await DatabaseHelper.instance.database;
+
+  // Check if onboarding is completed.
+  try {
+    final directory = await getApplicationDocumentsDirectory();
+    final file = File('${directory.path}/.onboarding_completed');
+    final onboardingDone = await file.exists();
+    if (!onboardingDone) {
+      return const OnboardingScreen();
+    }
+  } catch (_) {
+    // If anything fails (e.g. storage access issues), fall through to normal screen.
+  }
+
+  // Check if a teacher is logged in persistently.
+  try {
+    final directory = await getApplicationDocumentsDirectory();
+    final file = File('${directory.path}/.logged_in_teacher_email');
+    if (await file.exists()) {
+      final email = (await file.readAsString()).trim();
+      if (email.isNotEmpty) {
+        final teacher = await TeacherRepository().getTeacherByEmail(email);
+        return TeacherDashboardScreen(teacher: teacher);
+      }
+    }
+  } catch (e) {
+    print('⚠️ Error loading persistently logged-in teacher: $e');
+  }
 
   final deviceId = await _getDeviceId();
   if (deviceId != null) {
@@ -41,7 +77,7 @@ Future<Widget> _getInitialScreen() async {
     }
   }
 
-  // If no student is registered, show the role selection screen.
+  // If no student is registered and no teacher is logged in, show the role selection screen.
   return const RoleSelectionScreen();
 }
 
@@ -64,142 +100,158 @@ class CampusRegisterApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Campus Register',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6366F1), // Indigo
-          brightness: Brightness.light,
-          primary: const Color(0xFF6366F1),
-          secondary: const Color(0xFFF59E0B), // Amber
-          background: const Color(0xFFF8FAFC), // Slate 50
-          surface: Colors.white,
-        ),
-        cardTheme: CardThemeData(
-          elevation: 0,
-          shadowColor: Colors.black.withOpacity(0.03),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-            side: const BorderSide(color: Color(0xFFE2E8F0), width: 1),
+    return ValueListenableBuilder<ThemeSettings>(
+      valueListenable: ThemeService.instance.settingsNotifier,
+      builder: (context, themeSettings, child) {
+        final seedColor = themeSettings.getSeedColor();
+        final themeMode = themeSettings.themeMode;
+
+        return MaterialApp(
+          title: 'Campus Register',
+          debugShowCheckedModeBanner: false,
+          themeMode: themeMode,
+          theme: ThemeData(
+            useMaterial3: true,
+            scaffoldBackgroundColor: AppColors.slate50,
+            textTheme: AppType.textTheme(Brightness.light),
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: seedColor,
+              brightness: Brightness.light,
+              primary: seedColor,
+              secondary: AppColors.amber,
+              background: AppColors.slate50,
+              surface: Colors.white,
+            ),
+            cardTheme: CardThemeData(
+              elevation: 0,
+              shadowColor: Colors.black.withOpacity(0.03),
+              shape: RoundedRectangleBorder(
+                borderRadius: AppRadius.xlR,
+                side: const BorderSide(color: AppColors.slate200, width: 1),
+              ),
+              color: Colors.white,
+            ),
+            inputDecorationTheme: InputDecorationTheme(
+              filled: true,
+              fillColor: AppColors.slate50,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+              border: OutlineInputBorder(
+                borderRadius: AppRadius.mdR,
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: AppRadius.mdR,
+                borderSide: const BorderSide(color: AppColors.slate200, width: 1),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: AppRadius.mdR,
+                borderSide: BorderSide(color: seedColor, width: 2),
+              ),
+              errorBorder: OutlineInputBorder(
+                borderRadius: AppRadius.mdR,
+                borderSide: const BorderSide(color: AppColors.danger, width: 1),
+              ),
+              focusedErrorBorder: OutlineInputBorder(
+                borderRadius: AppRadius.mdR,
+                borderSide: const BorderSide(color: AppColors.danger, width: 2),
+              ),
+              labelStyle: AppType.body(context, color: AppColors.slate500, weight: FontWeight.w500),
+              floatingLabelStyle: AppType.body(context, color: seedColor, weight: FontWeight.w700),
+            ),
+            elevatedButtonTheme: ElevatedButtonThemeData(
+              style: ElevatedButton.styleFrom(
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: AppRadius.mdR),
+                textStyle: AppType.body(context, weight: FontWeight.w700, fontSize: 16, letterSpacing: 0.2),
+              ),
+            ),
+            appBarTheme: AppBarTheme(
+              centerTitle: true,
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              titleTextStyle: AppType.display(
+                context,
+                color: AppColors.slate800,
+                weight: FontWeight.w600,
+                fontSize: 20,
+                letterSpacing: -0.4,
+              ),
+              iconTheme: const IconThemeData(color: AppColors.slate800),
+            ),
           ),
-          color: Colors.white,
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: const Color(0xFFF8FAFC), // Slate 50
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide.none,
+          darkTheme: ThemeData(
+            useMaterial3: true,
+            scaffoldBackgroundColor: AppColors.slate900,
+            textTheme: AppType.textTheme(Brightness.dark),
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: seedColor,
+              brightness: Brightness.dark,
+              primary: seedColor,
+              secondary: AppColors.amberLight,
+              background: AppColors.slate900,
+              surface: AppColors.slate800,
+            ),
+            cardTheme: CardThemeData(
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: AppRadius.xlR,
+                side: BorderSide(color: Colors.white.withOpacity(0.06), width: 1),
+              ),
+              color: AppColors.slate800,
+            ),
+            inputDecorationTheme: InputDecorationTheme(
+              filled: true,
+              fillColor: AppColors.slate900,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+              border: OutlineInputBorder(
+                borderRadius: AppRadius.mdR,
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: AppRadius.mdR,
+                borderSide: BorderSide(color: Colors.white.withOpacity(0.08), width: 1),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: AppRadius.mdR,
+                borderSide: BorderSide(color: seedColor, width: 2),
+              ),
+              errorBorder: OutlineInputBorder(
+                borderRadius: AppRadius.mdR,
+                borderSide: const BorderSide(color: AppColors.danger, width: 1),
+              ),
+              focusedErrorBorder: OutlineInputBorder(
+                borderRadius: AppRadius.mdR,
+                borderSide: const BorderSide(color: AppColors.danger, width: 2),
+              ),
+              labelStyle: AppType.body(context, color: Colors.grey, weight: FontWeight.w500),
+              floatingLabelStyle: AppType.body(context, color: seedColor, weight: FontWeight.w700),
+            ),
+            elevatedButtonTheme: ElevatedButtonThemeData(
+              style: ElevatedButton.styleFrom(
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: AppRadius.mdR),
+                textStyle: AppType.body(context, weight: FontWeight.w700, fontSize: 16, letterSpacing: 0.2),
+              ),
+            ),
+            appBarTheme: AppBarTheme(
+              centerTitle: true,
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              titleTextStyle: AppType.display(
+                context,
+                color: Colors.white,
+                weight: FontWeight.w600,
+                fontSize: 20,
+                letterSpacing: -0.4,
+              ),
+              iconTheme: const IconThemeData(color: Colors.white),
+            ),
           ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Color(0xFF6366F1), width: 2),
-          ),
-          errorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Colors.red, width: 1),
-          ),
-          focusedErrorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Colors.red, width: 2),
-          ),
-          labelStyle: const TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w500),
-          floatingLabelStyle: const TextStyle(color: Color(0xFF6366F1), fontWeight: FontWeight.bold),
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            elevation: 0,
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 0.2),
-          ),
-        ),
-        appBarTheme: const AppBarTheme(
-          centerTitle: true,
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          titleTextStyle: TextStyle(
-            color: Color(0xFF1E293B), // Slate 800
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-            letterSpacing: -0.5,
-          ),
-          iconTheme: IconThemeData(color: Color(0xFF1E293B)),
-        ),
-      ),
-      darkTheme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6366F1),
-          brightness: Brightness.dark,
-          primary: const Color(0xFF818CF8), // Lighter Indigo
-          secondary: const Color(0xFFFBBF24),
-          background: const Color(0xFF0F172A), // Slate 900
-          surface: const Color(0xFF1E293B), // Slate 800
-        ),
-        cardTheme: CardThemeData(
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-            side: BorderSide(color: Colors.white.withOpacity(0.06), width: 1),
-          ),
-          color: const Color(0xFF1E293B),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: const Color(0xFF0F172A), // Slate 900
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide(color: Colors.white.withOpacity(0.08), width: 1),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Color(0xFF818CF8), width: 2),
-          ),
-          errorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Colors.red, width: 1),
-          ),
-          focusedErrorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Colors.red, width: 2),
-          ),
-          labelStyle: const TextStyle(color: Colors.grey, fontWeight: FontWeight.w500),
-          floatingLabelStyle: const TextStyle(color: Color(0xFF818CF8), fontWeight: FontWeight.bold),
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            elevation: 0,
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 0.2),
-          ),
-        ),
-        appBarTheme: const AppBarTheme(
-          centerTitle: true,
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          titleTextStyle: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-            letterSpacing: -0.5,
-          ),
-          iconTheme: IconThemeData(color: Colors.white),
-        ),
-      ),
-      themeMode: ThemeMode.system,
-      home: initialScreen,
+          home: initialScreen,
+        );
+      },
     );
   }
 }

@@ -6,6 +6,7 @@ import 'teacher.dart';
 import 'venue.dart';
 import 'course_repository.dart';
 import 'venue_repository.dart';
+import 'ui/design_tokens.dart';
 
 /// A screen for teachers to create a new course.
 class CreateCourseScreen extends StatefulWidget {
@@ -86,7 +87,8 @@ class _CreateCourseScreenState extends State<CreateCourseScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Course "${savedCourse.name}" created successfully!'),
-            backgroundColor: Colors.green,
+            backgroundColor: AppColors.success,
+            behavior: SnackBarBehavior.floating,
           ),
         );
         Navigator.of(context).pop();
@@ -96,48 +98,123 @@ class _CreateCourseScreenState extends State<CreateCourseScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Create New Course'),
       ),
-      body: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              TextFormField(
-                controller: _courseNameController,
-                decoration: const InputDecoration(labelText: 'Course Name'),
-                validator: (value) =>
-                    value!.isEmpty ? 'Please enter a course name' : null,
-              ),
-              TextFormField(
-                controller: _schoolNameController,
-                decoration: const InputDecoration(labelText: 'School Name'),
-                validator: (value) =>
-                    value!.isEmpty ? 'Please enter a school name' : null,
-              ),
-              const SizedBox(height: 20),
-              _buildVenueDropdown(),
-              const SizedBox(height: 20),
-              _buildDatePicker(
-                label: 'Start Date',
-                date: _startDate,
-                onTap: () => _selectDate(context, isStartDate: true),
-              ),
-              _buildDatePicker(
-                label: 'End Date',
-                date: _endDate,
-                onTap: () => _selectDate(context, isStartDate: false),
-              ),
-              const SizedBox(height: 40),
-              ElevatedButton(
-                onPressed: _saveCourse,
-                child: const Text('Save Course'),
-              ),
-            ],
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: isDark
+                ? [AppColors.slate900, AppColors.slate800]
+                : [AppColors.slate50, const Color(0xFFEEF2F6)],
+          ),
+        ),
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(AppSpace.xl),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Course details',
+                  style: AppType.display(
+                    context,
+                    fontSize: 14,
+                    weight: FontWeight.w700,
+                    color: AppColors.textSecondary(isDark),
+                    letterSpacing: 0.6,
+                  ),
+                ),
+                const SizedBox(height: AppSpace.md),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpace.xl),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        TextFormField(
+                          controller: _courseNameController,
+                          decoration: const InputDecoration(
+                            labelText: 'Course name',
+                            prefixIcon: Icon(Icons.menu_book_rounded),
+                          ),
+                          validator: (value) =>
+                              value!.isEmpty ? 'Please enter a course name' : null,
+                        ),
+                        const SizedBox(height: AppSpace.md),
+                        TextFormField(
+                          controller: _schoolNameController,
+                          decoration: const InputDecoration(
+                            labelText: 'School name',
+                            prefixIcon: Icon(Icons.account_balance_rounded),
+                          ),
+                          validator: (value) =>
+                              value!.isEmpty ? 'Please enter a school name' : null,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpace.xxl),
+
+                Text(
+                  'Classroom & schedule',
+                  style: AppType.display(
+                    context,
+                    fontSize: 14,
+                    weight: FontWeight.w700,
+                    color: AppColors.textSecondary(isDark),
+                    letterSpacing: 0.6,
+                  ),
+                ),
+                const SizedBox(height: AppSpace.md),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpace.lg, vertical: AppSpace.sm),
+                    child: _buildVenueDropdown(context),
+                  ),
+                ),
+                const SizedBox(height: AppSpace.md),
+                Card(
+                  child: Column(
+                    children: [
+                      _buildDatePicker(
+                        context,
+                        label: 'Start date',
+                        date: _startDate,
+                        icon: Icons.event_rounded,
+                        onTap: () => _selectDate(context, isStartDate: true),
+                      ),
+                      Divider(height: 1, color: AppColors.border(isDark)),
+                      _buildDatePicker(
+                        context,
+                        label: 'End date',
+                        date: _endDate,
+                        icon: Icons.event_busy_rounded,
+                        onTap: () => _selectDate(context, isStartDate: false),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpace.xxxl + 4),
+                ElevatedButton(
+                  onPressed: _saveCourse,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: theme.colorScheme.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                  child: const Text('Save course'),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -145,34 +222,53 @@ class _CreateCourseScreenState extends State<CreateCourseScreen> {
   }
 
   Widget _buildDatePicker(
-      {required String label, DateTime? date, required VoidCallback onTap}) {
+    BuildContext context, {
+    required String label,
+    DateTime? date,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: Text(label),
-      subtitle:
-          Text(date == null ? 'Not set' : DateFormat.yMMMd().format(date)),
-      trailing: const Icon(Icons.calendar_today),
+      contentPadding: const EdgeInsets.symmetric(horizontal: AppSpace.lg, vertical: AppSpace.xs),
+      leading: Icon(icon, color: Theme.of(context).colorScheme.primary),
+      title: Text(label, style: AppType.body(context, fontSize: 13, color: AppColors.textSecondary(isDark), weight: FontWeight.w600)),
+      subtitle: Text(
+        date == null ? 'Not set' : DateFormat.yMMMd().format(date),
+        style: AppType.data(context, fontSize: 14.5, color: AppColors.textPrimary(isDark), weight: FontWeight.w600),
+      ),
+      trailing: const Icon(Icons.chevron_right_rounded),
       onTap: onTap,
     );
   }
 
-  Widget _buildVenueDropdown() {
+  Widget _buildVenueDropdown(BuildContext context) {
     return FutureBuilder<List<Venue>>(
       future: _venuesFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: AppSpace.lg),
+            child: Center(child: CircularProgressIndicator()),
+          );
         }
         if (!snapshot.hasData || snapshot.data!.isEmpty) {
-          return const ListTile(
-            title: Text('No venues created'),
-            subtitle: Text('Please create a venue first.'),
+          final isDark = Theme.of(context).brightness == Brightness.dark;
+          return ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.location_off_rounded, color: AppColors.slate400),
+            title: Text('No venues created', style: AppType.body(context, weight: FontWeight.w600, color: AppColors.textPrimary(isDark))),
+            subtitle: Text('Please create a classroom venue first.', style: AppType.body(context, fontSize: 12.5, color: AppColors.textSecondary(isDark))),
           );
         }
         final venues = snapshot.data!;
         return DropdownButtonFormField<int>(
           value: _selectedVenueId,
-          decoration: const InputDecoration(labelText: 'Venue'),
+          decoration: const InputDecoration(
+            labelText: 'Venue',
+            prefixIcon: Icon(Icons.spatial_tracking_rounded),
+            border: InputBorder.none,
+          ),
           items: venues.map((venue) {
             return DropdownMenuItem<int>(
               value: venue.id,

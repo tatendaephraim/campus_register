@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'database_helper.dart';
 import 'timetable.dart';
+import 'course_repository.dart';
 
 /// Repository for handling data operations for the [TimetableSlot] model.
 class TimetableRepository {
@@ -107,5 +108,46 @@ class TimetableRepository {
 
     // 2. Delete locally
     await db.delete('timetable_slots', where: 'id = ?', whereArgs: [slotId]);
+  }
+
+  /// Checks if a proposed timetable slot for a venue clashes with any existing slots.
+  /// Returns a map with 'clash': true/false, and 'message': String details of the clash.
+  Future<Map<String, dynamic>> checkClash(
+    int venueId,
+    int dayOfWeek,
+    String startTime,
+    String endTime, {
+    int? excludeCourseId,
+  }) async {
+    final courseRepo = CourseRepository();
+    final allCourses = await courseRepo.getAllCourses();
+
+    // Filter courses assigned to this venue (excluding the current course if specified)
+    final venueCourses = allCourses.where((c) => c.venueId == venueId && c.id != excludeCourseId).toList();
+
+    for (final course in venueCourses) {
+      final slots = await getTimetableForCourse(course.id!);
+      for (final slot in slots) {
+        if (slot.dayOfWeek == dayOfWeek) {
+          // Check overlap: startA < endB && endA > startB
+          if (startTime.compareTo(slot.endTime) < 0 && endTime.compareTo(slot.startTime) > 0) {
+            return {
+              'clash': true,
+              'course': course,
+              'slot': slot,
+              'message': 'This time clashes with course "${course.name}" (${_getDayName(slot.dayOfWeek)} ${slot.startTime}–${slot.endTime}) scheduled in the same venue.',
+            };
+          }
+        }
+      }
+    }
+
+    return {'clash': false};
+  }
+
+  String _getDayName(int day) {
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    if (day >= 1 && day <= 7) return days[day - 1];
+    return 'Unknown';
   }
 }

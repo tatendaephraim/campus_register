@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import 'package:lottie/lottie.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:geolocator/geolocator.dart';
 
 import 'attendance_record.dart';
 import 'student.dart';
@@ -18,6 +20,10 @@ import 'check_in_service.dart';
 import 'attendance_repository.dart';
 import 'student_attendance_view.dart';
 import 'role_selection_screen.dart';
+import 'student_repository.dart';
+import 'student_registration_screen.dart';
+import 'student_course_details_screen.dart';
+import 'ui/design_tokens.dart';
 
 class StudentDashboardScreen extends StatefulWidget {
   final Student student;
@@ -37,23 +43,31 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   final _locationService = LocationService();
   final _venueRepo = VenueRepository();
 
-  late Future<List<StudentAttendanceView>> _attendanceFuture;
-  late Future<List<TimetableSlot>> _timetableFuture;
-  Course? _course;
-  TimetableSlot? _activeSlot;
   Timer? _timer;
   Timer? _countdownTimer;
-  String _timeLeftString = '';
   bool _isCheckingIn = false;
   bool _showGuide = false; // Toggle for volumetric tracking info guide
+
+  List<Student> _studentProfiles = [];
+  late Student _currentStudent;
+
+  // Multi-course states
+  final Map<int, List<StudentAttendanceView>> _attendanceByProfileId = {};
+  final Map<int, List<TimetableSlot>> _timetableByProfileId = {};
+  final Map<int, Course> _courseByProfileId = {};
+  final Map<int, TimetableSlot?> _activeSlotByProfileId = {};
+  final Map<int, int> _visibleHistoryLimitByProfileId = {};
+  final Map<int, bool> _hasCheckedInByProfileId = {};
+  final Map<int, bool> _isInsideVenueByProfileId = {};
+  bool _isLoadingDashboard = true;
 
   @override
   void initState() {
     super.initState();
-    _loadAttendance();
-    _loadCourse();
-    _loadTimetable();
+    _currentStudent = widget.student;
+    _loadAllDashboardData();
     _startActiveSlotChecker();
+    _startCountdownTimer();
   }
 
   @override
@@ -63,125 +77,163 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     super.dispose();
   }
 
-  void _loadCourse() async {
-    final course = await _courseRepo.getCourseById(widget.student.courseId);
-    if (mounted) {
-      setState(() {
-        _course = course;
-      });
+  void _startActiveSlotChecker() {
+    _timer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      _checkAllActiveSlots();
+    });
+  }
+
+  void _startCountdownTimer() {
+    _countdownTimer?.cancel();
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        setState(() {}); // Trigger rebuild to update time left labels dynamically
+      }
+    });
+  }
+
+  Future<void> _checkAllActiveSlots() async {
+    // 1. Gather active slots first (very fast DB queries)
+    bool hasAnyActiveSlot = false;
+    final Map<int, TimetableSlot?> slots = {};
+    final Map<int, bool> checkedIn = {};
+
+    for (var profile in _studentProfiles) {
+      final profileId = profile.id!;
+      final TimetableSlot? potentialSlot = await _checkInService.getActiveSlot(profile.courseId);
+      slots[profileId] = potentialSlot;
+      if (potentialSlot != null) {
+        hasAnyActiveSlot = true;
+        checkedIn[profileId] = await _checkInRepo.hasCheckedInToday(profileId, potentialSlot.id!);
+      }
+    }
+
+    // 2. Only request location if there is actually a live session!
+    Position? position;
+    if (hasAnyActiveSlot) {
+      try {
+        // Try getting last known position first (instantaneous)
+        position = await Geolocator.getLastKnownPosition();
+        // If last known position is null, get current position with a short timeout and medium accuracy
+        position ??= await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.medium,
+          timeLimit: const Duration(seconds: 4),
+        );
+      } catch (_) {}
+    }
+
+    // 3. Update geofence states and UI
+    for (var profile in _studentProfiles) {
+      final profileId = profile.id!;
+      final potentialSlot = slots[profileId];
+      final alreadyCheckedIn = checkedIn[profileId] ?? false;
+
+      bool isInsideVenue = false;
+      if (potentialSlot != null && position != null) {
+        final course = _courseByProfileId[profileId];
+        if (course?.venueId != null) {
+          final venue = await _venueRepo.getVenueById(course!.venueId!);
+          if (venue != null && venue.hasPolygon) {
+            isInsideVenue = _locationService.isPointInPolygon(
+              position.latitude,
+              position.longitude,
+              venue.polygonCorners!,
+            );
+          }
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _activeSlotByProfileId[profileId] = potentialSlot;
+          _hasCheckedInByProfileId[profileId] = alreadyCheckedIn;
+          _isInsideVenueByProfileId[profileId] = isInsideVenue;
+        });
+      }
     }
   }
 
-  void _loadTimetable() {
-    setState(() {
-      _timetableFuture = TimetableRepository().getTimetableForCourse(widget.student.courseId);
-    });
-  }
-
-  void _startActiveSlotChecker() {
-    _timer = Timer.periodic(const Duration(seconds: 30), (timer) {
-      _checkForActiveSlot();
-    });
-    _checkForActiveSlot();
-  }
-
-  void _startCountdown() {
-    _countdownTimer?.cancel();
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      _updateTimeLeft();
-    });
-    _updateTimeLeft();
-  }
-
-  void _updateTimeLeft() {
-    if (_activeSlot == null) {
-      if (_timeLeftString.isNotEmpty) {
-        setState(() {
-          _timeLeftString = '';
-        });
-      }
-      return;
+  Future<void> _loadAllDashboardData() async {
+    if (mounted) {
+      setState(() {
+        _isLoadingDashboard = true;
+      });
     }
 
     try {
-      final now = DateTime.now();
-      final timeParts = _activeSlot!.endTime.split(':');
-      final endHour = int.parse(timeParts[0]);
-      final endMinute = int.parse(timeParts[1]);
+      final profiles = await StudentRepository().getStudentsByDeviceId(_currentStudent.deviceAppId);
+      _studentProfiles = profiles;
+      
+      _attendanceByProfileId.clear();
+      _timetableByProfileId.clear();
+      _courseByProfileId.clear();
+      _activeSlotByProfileId.clear();
 
-      final classEndTime = DateTime(now.year, now.month, now.day, endHour, endMinute);
-      final difference = classEndTime.difference(now);
+      // Load all profiles in parallel to speed up database queries
+      await Future.wait(_studentProfiles.map((profile) async {
+        final profileId = profile.id!;
+        
+        // Fetch course, attendance, timetable, and active slot concurrently
+        final results = await Future.wait([
+          _courseRepo.getCourseById(profile.courseId),
+          _attendanceRepo.getAttendanceForStudent(profileId),
+          TimetableRepository().getTimetableForCourse(profile.courseId),
+          _checkInService.getActiveSlot(profile.courseId),
+        ]);
 
-      if (difference.isNegative) {
-        setState(() {
-          _activeSlot = null;
-          _timeLeftString = '';
-        });
-        _checkForActiveSlot();
-      } else {
-        final hours = difference.inHours;
-        final minutes = difference.inMinutes.remainder(60);
-        final seconds = difference.inSeconds.remainder(60);
+        final course = results[0] as Course?;
+        final attendance = results[1] as List<StudentAttendanceView>;
+        final timetable = results[2] as List<TimetableSlot>;
+        final potentialSlot = results[3] as TimetableSlot?;
 
-        String timeStr = '';
-        if (hours > 0) {
-          timeStr += '${hours}h ';
+        if (course != null) {
+          _courseByProfileId[profileId] = course;
         }
-        timeStr += '${minutes}m ${seconds}s';
 
-        setState(() {
-          _timeLeftString = timeStr;
-        });
-      }
+        _attendanceByProfileId[profileId] = attendance;
+        _timetableByProfileId[profileId] = timetable;
+        _activeSlotByProfileId[profileId] = potentialSlot;
+        
+        bool alreadyCheckedIn = false;
+        if (potentialSlot != null) {
+          alreadyCheckedIn = await _checkInRepo.hasCheckedInToday(profileId, potentialSlot.id!);
+        }
+        _hasCheckedInByProfileId[profileId] = alreadyCheckedIn;
+        _isInsideVenueByProfileId[profileId] = false;
+        
+        _visibleHistoryLimitByProfileId.putIfAbsent(profileId, () => 3);
+
+        // Run backfill absent records in the background (no need to await it to show UI!)
+        _checkInRepo.backfillAbsentRecords(profile.courseId).catchError((_) => 0);
+      }));
+      
+      // Run location check asynchronously
+      _checkAllActiveSlots();
     } catch (e) {
-      setState(() {
-        _timeLeftString = '';
-      });
-    }
-  }
-
-  Future<void> _checkForActiveSlot() async {
-    TimetableSlot? potentialSlot =
-        await _checkInService.getActiveSlot(widget.student.courseId);
-
-    if (potentialSlot != null) {
-      final bool alreadyCheckedIn = await _checkInRepo.hasCheckedInToday(
-          widget.student.id!, potentialSlot.id!);
-      if (alreadyCheckedIn) {
-        potentialSlot = null;
-      }
-    }
-
-    if (mounted) {
-      setState(() {
-        _activeSlot = potentialSlot;
-      });
-      if (potentialSlot != null) {
-        _startCountdown();
-      } else {
-        _countdownTimer?.cancel();
+      debugPrint('Error loading dashboard data: $e');
+    } finally {
+      if (mounted) {
         setState(() {
-          _timeLeftString = '';
+          _isLoadingDashboard = false;
         });
       }
     }
   }
 
-  Future<void> _performCheckIn() async {
-    if (_activeSlot == null) return;
+  Future<void> _performCheckIn(Student student, TimetableSlot activeSlot) async {
     setState(() => _isCheckingIn = true);
 
     try {
       // --- 1. Class Time Validation ---
-      final currentActiveSlot = await _checkInService.getActiveSlot(widget.student.courseId);
-      if (currentActiveSlot == null || currentActiveSlot.id != _activeSlot!.id) {
+      final currentActiveSlot = await _checkInService.getActiveSlot(student.courseId);
+      if (currentActiveSlot == null || currentActiveSlot.id != activeSlot.id) {
         throw 'Class is not currently active. Sign-in is restricted to the specific times of that class.';
       }
 
       // --- 2. Location Validation & Volumetric Check ---
       final position = await _locationService.getCurrentPositionWithPermissions();
 
-      final course = await _courseRepo.getCourseById(widget.student.courseId);
+      final course = _courseByProfileId[student.id!];
       if (course?.venueId != null) {
         final venue = await _venueRepo.getVenueById(course!.venueId!);
         if (venue != null) {
@@ -200,11 +252,14 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
 
           final currentAlt = AltitudeService.instance.getCombinedAltitude(position.altitude);
 
-          if (currentAlt < venue.altitude - 2.0) {
+          final double toleranceLower = 8.0;
+          final double toleranceUpper = venue.verticalTolerance > 0.0 ? venue.verticalTolerance : 12.0;
+
+          if (currentAlt < venue.altitude - toleranceLower) {
             throw 'Underground sign-in detected. Sign-in is denied below ground level.';
           }
 
-          if (currentAlt > venue.altitude + 5.0) {
+          if (currentAlt > venue.altitude + toleranceUpper) {
             throw 'Upper floor sign-in detected. Fingerprint sensor deactivated because you are not in the classroom.';
           }
         }
@@ -231,7 +286,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
       String attendanceStatus = 'PRESENT';
       const gracePeriodMinutes = 5;
 
-      final timeParts = _activeSlot!.startTime.split(':');
+      final timeParts = activeSlot.startTime.split(':');
       final startHour = int.parse(timeParts[0]);
       final startMinute = int.parse(timeParts[1]);
 
@@ -246,8 +301,8 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
       final currentAlt = AltitudeService.instance.getCombinedAltitude(position.altitude);
 
       final record = AttendanceRecord(
-        studentId: widget.student.id!,
-        timetableSlotId: _activeSlot!.id!,
+        studentId: student.id!,
+        timetableSlotId: activeSlot.id!,
         type: 'CHECK-IN',
         timestamp: now,
         status: attendanceStatus,
@@ -259,12 +314,8 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
 
       await _checkInRepo.createAttendanceRecord(record);
 
-      _courseRepo.getCourseById(widget.student.courseId).then((course) {
-        if (course != null) {
-          _sheetsSyncService.syncRecord(
-              record: record, student: widget.student, course: course);
-        }
-      });
+      _sheetsSyncService.syncRecord(
+          record: record, student: student, course: course);
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -272,8 +323,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
             backgroundColor: Colors.green),
       );
 
-      _loadAttendance();
-      setState(() => _activeSlot = null);
+      _loadAllDashboardData();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -286,18 +336,154 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     }
   }
 
-  void _loadAttendance() {
-    setState(() {
-      _attendanceFuture =
-          _attendanceRepo.getAttendanceForStudent(widget.student.id!);
-    });
-  }
-
   void _handleSignOut() {
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (context) => const RoleSelectionScreen()),
       (route) => false,
     );
+  }
+
+  void _showStudentProfileDialog() {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.account_circle_rounded, size: 28, color: theme.colorScheme.primary),
+              const SizedBox(width: AppSpace.sm),
+              Text('Student profile', style: AppType.display(context, fontSize: 17, weight: FontWeight.w600)),
+            ],
+          ),
+          shape: RoundedRectangleBorder(borderRadius: AppRadius.xlR),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'NAME',
+                style: AppType.body(context, weight: FontWeight.w700, color: AppColors.textSecondary(isDark), fontSize: 11, letterSpacing: 0.4),
+              ),
+              Text(
+                _currentStudent.name,
+                style: AppType.display(context, weight: FontWeight.w600, fontSize: 16),
+              ),
+              const SizedBox(height: AppSpace.md),
+              Text(
+                'BOUND DEVICE ID',
+                style: AppType.body(context, weight: FontWeight.w700, color: AppColors.textSecondary(isDark), fontSize: 11, letterSpacing: 0.4),
+              ),
+              SelectableText(
+                _currentStudent.deviceAppId,
+                style: AppType.data(context, fontSize: 13),
+              ),
+              const SizedBox(height: AppSpace.md),
+              Text(
+                'ENROLLED COURSES',
+                style: AppType.body(context, weight: FontWeight.w700, color: AppColors.textSecondary(isDark), fontSize: 11, letterSpacing: 0.4),
+              ),
+              const SizedBox(height: 4),
+              ..._studentProfiles.map((profile) {
+                final course = _courseByProfileId[profile.id!];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 4.0),
+                  child: Text(
+                    course?.name ?? 'Loading…',
+                    style: AppType.display(context, fontSize: 13.5, weight: FontWeight.w600),
+                  ),
+                );
+              }),
+              const SizedBox(height: AppSpace.xl),
+              const Divider(),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Reset Device Binding'),
+                        content: const Text(
+                          'Warning: This will delete all course enrollments registered to this device. You will need a new invitation code to sign in again.\n\nDo you want to proceed?',
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.of(context).pop(false),
+                            child: const Text('Cancel'),
+                          ),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.danger,
+                              foregroundColor: Colors.white,
+                            ),
+                            onPressed: () => Navigator.of(context).pop(true),
+                            child: const Text('Reset binding'),
+                          ),
+                        ],
+                      ),
+                    );
+
+                    if (confirm == true) {
+                      await StudentRepository().deleteStudent(_currentStudent.id!);
+                      if (context.mounted) {
+                        Navigator.of(context).pop(); // dismiss profile dialog
+                        _handleSignOut();
+                      }
+                    }
+                  },
+                  icon: const Icon(Icons.phonelink_erase_rounded, size: 16),
+                  label: const Text('Reset Device Binding'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.danger,
+                    side: const BorderSide(color: AppColors.danger),
+                    shape: RoundedRectangleBorder(borderRadius: AppRadius.smR),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  String _getRemainingTime(TimetableSlot slot) {
+    try {
+      final now = DateTime.now();
+      final timeParts = slot.endTime.split(':');
+      final endHour = int.parse(timeParts[0]);
+      final endMinute = int.parse(timeParts[1]);
+
+      final classEndTime = DateTime(now.year, now.month, now.day, endHour, endMinute);
+      final difference = classEndTime.difference(now);
+
+      if (difference.isNegative) {
+        return 'Ended';
+      } else {
+        final hours = difference.inHours;
+        final minutes = difference.inMinutes.remainder(60);
+        final seconds = difference.inSeconds.remainder(60);
+
+        String timeStr = '';
+        if (hours > 0) {
+          timeStr += '${hours}h ';
+        }
+        timeStr += '${minutes}m ${seconds}s';
+        return timeStr;
+      }
+    } catch (_) {
+      return 'Calculating…';
+    }
   }
 
   @override
@@ -306,234 +492,400 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Text('Welcome, ${widget.student.name}'),
-            Text(
-              'Student Portal',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-        automaticallyImplyLeading: false,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout_rounded),
-            onPressed: _handleSignOut,
-            tooltip: 'Sign Out',
-          ),
-        ],
-      ),
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: isDark
-                ? [
-                    const Color(0xFF0F172A),
-                    const Color(0xFF1E293B),
-                  ]
-                : [
-                    const Color(0xFFF8FAFC),
-                    const Color(0xFFEEF2F6),
-                  ],
+                ? [AppColors.slate900, AppColors.slate800]
+                : [AppColors.slate50, const Color(0xFFEEF2F6)],
           ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Active session card / scanning mode
-            if (_activeSlot != null) _buildPremiumCheckInCard(theme, isDark),
-
-            // Enrolled Course Timetable (New Feature)
-            _buildTimetableSection(theme, isDark),
-
-            // User Info Guide (Fulfills the 'provide info' request)
-            _buildVolumetricGuideCard(theme, isDark),
-
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
-              child: Text(
-                'Your Attendance History',
-                style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : const Color(0xFF1E293B),
-                  letterSpacing: -0.6,
+        child: CustomScrollView(
+          slivers: [
+            SliverAppBar(
+              expandedHeight: 180.0,
+              pinned: true,
+              backgroundColor: isDark ? AppColors.slate950 : theme.colorScheme.primary,
+              foregroundColor: Colors.white,
+              elevation: 4,
+              title: Text(
+                'Student Portal',
+                style: AppType.display(context, fontSize: 18, weight: FontWeight.w700, color: Colors.white),
+              ),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.add_circle_outline_rounded),
+                  tooltip: 'Register New Course',
+                  onPressed: () async {
+                    final result = await Navigator.of(context).push<Student>(
+                      MaterialPageRoute(builder: (context) => const StudentRegistrationScreen()),
+                    );
+                    if (result != null) {
+                      _loadAllDashboardData();
+                    }
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.logout_rounded),
+                  onPressed: _handleSignOut,
+                  tooltip: 'Sign Out',
+                ),
+              ],
+              flexibleSpace: FlexibleSpaceBar(
+                background: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    SvgPicture.asset(
+                      'assets/images/banner.svg',
+                      fit: BoxFit.cover,
+                    ),
+                    Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.black.withOpacity(0.35),
+                            Colors.black.withOpacity(0.0),
+                            Colors.black.withOpacity(0.6),
+                          ],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(AppSpace.xl, 80.0, AppSpace.xl, AppSpace.md),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Text(
+                            'STUDENT PORTAL',
+                            style: AppType.body(
+                              context,
+                              color: Colors.white.withOpacity(0.85),
+                              weight: FontWeight.w700,
+                              fontSize: 10,
+                              letterSpacing: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _currentStudent.name,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppType.display(
+                              context,
+                              fontSize: 22,
+                              weight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Dashboard Feed',
+                            style: AppType.body(
+                              context,
+                              fontSize: 12.5,
+                              color: Colors.white.withOpacity(0.7),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
 
-            Expanded(
-              child: FutureBuilder<List<StudentAttendanceView>>(
-                future: _attendanceFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  if (snapshot.hasError) {
-                    return Center(child: Text('Error: ${snapshot.error}'));
-                  }
-                  if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(32.0),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.history_rounded,
-                              size: 64,
-                              color: isDark ? Colors.grey[600] : const Color(0xFF94A3B8),
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'No attendance history yet.',
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }
-
-                  final records = snapshot.data!;
-                  return ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: records.length,
-                    itemBuilder: (context, index) {
-                      final record = records[index];
-                      final day = [
-                        'Mon',
-                        'Tue',
-                        'Wed',
-                        'Thu',
-                        'Fri',
-                        'Sat',
-                        'Sun'
-                      ][record.dayOfWeek - 1];
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: theme.colorScheme.primary.withOpacity(0.08),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Icon(
-                                  Icons.menu_book_rounded,
-                                  color: theme.colorScheme.primary,
-                                  size: 24,
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      record.courseName,
-                                      style: theme.textTheme.titleMedium?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                        color: isDark ? Colors.white : const Color(0xFF1E293B),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      '${DateFormat.yMMMd().format(record.timestamp)} ($day)',
-                                      style: theme.textTheme.bodySmall?.copyWith(
-                                        color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
-                                      ),
-                                    ),
-                                    Text(
-                                      'Session: ${record.startTime} - ${record.endTime}',
-                                      style: theme.textTheme.bodySmall?.copyWith(
-                                        color: isDark ? Colors.grey[500] : const Color(0xFF94A3B8),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              _buildStatusBadge(record.status),
-                            ],
+            if (_isLoadingDashboard)
+              const SliverFillRemaining(
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_studentProfiles.isEmpty)
+              SliverFillRemaining(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpace.xxl),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Lottie.asset(
+                          'assets/lottie/register.json',
+                          height: 180,
+                          width: 180,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) => const Icon(
+                            Icons.menu_book_rounded,
+                            size: 64,
+                            color: AppColors.slate400,
                           ),
                         ),
-                      );
-                    },
-                  );
-                },
+                        const SizedBox(height: AppSpace.xl),
+                        Text(
+                          'No courses registered yet',
+                          style: AppType.display(
+                            context,
+                            fontSize: 17,
+                            weight: FontWeight.w600,
+                            color: AppColors.textPrimary(isDark),
+                          ),
+                        ),
+                        const SizedBox(height: AppSpace.sm),
+                        Text(
+                          'Tap the "+" button in the header to register your first course.',
+                          textAlign: TextAlign.center,
+                          style: AppType.body(context, fontSize: 13, color: AppColors.textSecondary(isDark)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            else ...[
+              SliverToBoxAdapter(
+                child: Column(
+                  children: [
+                    _buildVolumetricGuideCard(theme, isDark),
+                  ],
+                ),
+              ),
+              SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final student = _studentProfiles[index];
+                    return _buildCourseDashboardCard(context, theme, isDark, student);
+                  },
+                  childCount: _studentProfiles.length,
+                ),
+              ),
+              const SliverToBoxAdapter(
+                child: SizedBox(height: AppSpace.xxl),
+              ),
+            ],
+          ],
+        ),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showStudentProfileDialog,
+        backgroundColor: theme.colorScheme.primary,
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.account_circle_rounded),
+        label: const Text('View Profile'),
+      ),
+    );
+  }
+
+  Widget _buildCourseDashboardCard(
+    BuildContext context,
+    ThemeData theme,
+    bool isDark,
+    Student student,
+  ) {
+    final course = _courseByProfileId[student.id!];
+    if (course == null) {
+      return Card(
+        margin: const EdgeInsets.symmetric(horizontal: AppSpace.lg, vertical: AppSpace.sm),
+        child: const Padding(
+          padding: EdgeInsets.all(AppSpace.xl),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
+
+    final attendance = _attendanceByProfileId[student.id!] ?? [];
+    final activeSlot = _activeSlotByProfileId[student.id!];
+
+    // Calculate dynamic attendance rate for basic info
+    double rate = 0.0;
+    if (attendance.isNotEmpty) {
+      int presentOrLate = 0;
+      for (var record in attendance) {
+        final status = record.status.toUpperCase();
+        if (status == 'PRESENT' || status == 'LATE') {
+          presentOrLate++;
+        }
+      }
+      rate = presentOrLate / attendance.length;
+    }
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: AppSpace.lg, vertical: AppSpace.sm + 2),
+      shape: RoundedRectangleBorder(
+        borderRadius: AppRadius.xlR,
+        side: BorderSide(color: AppColors.border(isDark), width: 1.5),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () async {
+          await Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => StudentCourseDetailsScreen(
+                student: student,
+                course: course,
               ),
             ),
+          );
+          _loadAllDashboardData();
+        },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Basic Info Header
+            Padding(
+              padding: const EdgeInsets.all(AppSpace.lg),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 22,
+                    backgroundColor: theme.colorScheme.primary.withOpacity(0.12),
+                    child: Icon(Icons.class_rounded, color: theme.colorScheme.primary, size: 22),
+                  ),
+                  const SizedBox(width: AppSpace.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          course.name,
+                          style: AppType.display(context, fontSize: 16, weight: FontWeight.w700, color: AppColors.textPrimary(isDark)),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (course.schoolName != null && course.schoolName!.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            course.schoolName!,
+                            style: AppType.body(context, fontSize: 12, color: AppColors.textSecondary(isDark), weight: FontWeight.w500),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right_rounded, color: AppColors.slate400),
+                ],
+              ),
+            ),
+
+            // Attendance Rate Bar (Basic Info Indicator)
+            Padding(
+              padding: const EdgeInsets.only(left: AppSpace.lg, right: AppSpace.lg, bottom: AppSpace.lg),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Attendance Adherence',
+                        style: AppType.body(context, fontSize: 11.5, color: AppColors.textSecondary(isDark), weight: FontWeight.w600),
+                      ),
+                      Text(
+                        '${(rate * 100).toStringAsFixed(0)}%',
+                        style: AppType.body(context, fontSize: 12, color: theme.colorScheme.primary, weight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: rate,
+                      minHeight: 6,
+                      backgroundColor: isDark ? AppColors.slate800 : AppColors.slate200,
+                      color: rate >= 0.75
+                          ? AppColors.success
+                          : (rate >= 0.5 ? AppColors.warning : AppColors.danger),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Live check-in overlay card if class active (flashing border container)
+            if (activeSlot != null)
+              GestureDetector(
+                onTap: () {}, // Prevent navigating to details screen when tapping inside the check-in overlay
+                child: _buildPremiumCheckInCard(theme, isDark, student, activeSlot),
+              ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildPremiumCheckInCard(ThemeData theme, bool isDark) {
-    return Container(
-      margin: const EdgeInsets.all(16),
+
+  Widget _buildPremiumCheckInCard(ThemeData theme, bool isDark, Student student, TimetableSlot activeSlot) {
+    final timeLeft = _getRemainingTime(activeSlot);
+    final hasCheckedIn = _hasCheckedInByProfileId[student.id!] ?? false;
+    final isInsideVenue = _isInsideVenueByProfileId[student.id!] ?? false;
+
+    // Define colors and styles dynamically
+    Color primaryColor;
+    Color secondaryColor;
+    Color accentTextColor;
+    String statusTitle;
+    String statusSubtitle;
+    IconData statusIcon;
+
+    if (hasCheckedIn) {
+      primaryColor = AppColors.success;
+      secondaryColor = isDark ? const Color(0xFF064E3B) : const Color(0xFFD1FAE5);
+      accentTextColor = isDark ? const Color(0xFF34D399) : const Color(0xFF047857);
+      statusTitle = 'CHECK-IN SUCCESSFUL';
+      statusSubtitle = 'Your attendance has been registered.';
+      statusIcon = Icons.verified_rounded;
+    } else if (isInsideVenue) {
+      primaryColor = theme.colorScheme.primary;
+      secondaryColor = isDark ? AppColors.indigoDeep : const Color(0xFFE0F2FE);
+      accentTextColor = isDark ? theme.colorScheme.primary : const Color(0xFF0369A1);
+      statusTitle = 'INSIDE CLASS BOUNDS';
+      statusSubtitle = 'Biometric check-in ready.';
+      statusIcon = Icons.fingerprint_rounded;
+    } else {
+      primaryColor = AppColors.warning;
+      secondaryColor = isDark ? const Color(0xFF78350F) : const Color(0xFFFEF3C7);
+      accentTextColor = isDark ? AppColors.amberLight : const Color(0xFFB45309);
+      statusTitle = 'OUTSIDE CLASS BOUNDS';
+      statusSubtitle = 'Please move inside the classroom.';
+      statusIcon = Icons.location_off_rounded;
+    }
+
+    final card = Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: AppRadius.xlR,
         gradient: LinearGradient(
           colors: isDark
-              ? [const Color(0xFF1E1B4B), const Color(0xFF0F172A)]
-              : [const Color(0xFFE0F2FE), const Color(0xFFEEF2F6)],
+              ? [secondaryColor, AppColors.slate900]
+              : [primaryColor.withOpacity(0.12), primaryColor.withOpacity(0.02)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         border: Border.all(
-          color: const Color(0xFF0EA5E9).withOpacity(isDark ? 0.4 : 0.2),
+          color: primaryColor.withOpacity(isDark ? 0.4 : 0.2),
           width: 1.5,
         ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF0EA5E9).withOpacity(0.12),
-            blurRadius: 20,
-            spreadRadius: 2,
-          )
-        ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(20.0),
+        padding: const EdgeInsets.all(AppSpace.xl),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                // Pulse circle scanner animation indicator
                 Container(
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(
-                      color: const Color(0xFF0EA5E9).withOpacity(0.3),
-                      width: 2,
-                    ),
+                    border: Border.all(color: primaryColor.withOpacity(0.3), width: 2),
                   ),
                   child: CircleAvatar(
                     radius: 24,
-                    backgroundColor: const Color(0xFF0EA5E9).withOpacity(0.12),
-                    child: const Icon(
-                      Icons.fingerprint_rounded,
-                      color: Color(0xFF0EA5E9),
-                      size: 26,
-                    ),
+                    backgroundColor: primaryColor.withOpacity(0.12),
+                    child: Icon(statusIcon, color: primaryColor, size: 26),
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: AppSpace.lg),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -543,29 +895,32 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                           Container(
                             width: 8,
                             height: 8,
-                            decoration: const BoxDecoration(
-                              color: Colors.green,
+                            decoration: BoxDecoration(
+                              color: hasCheckedIn ? AppColors.success : (isInsideVenue ? AppColors.success : AppColors.warning),
                               shape: BoxShape.circle,
                             ),
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            'LIVE CLASS IN PROGRESS',
-                            style: TextStyle(
+                            statusTitle,
+                            style: AppType.body(
+                              context,
                               fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0369A1),
+                              weight: FontWeight.w700,
+                              color: accentTextColor,
                               letterSpacing: 1.0,
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 3),
                       Text(
-                        _course?.name ?? 'Enrolled Course',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          color: isDark ? Colors.white : const Color(0xFF0F172A),
-                          fontWeight: FontWeight.bold,
+                        statusSubtitle,
+                        style: AppType.display(
+                          context,
+                          fontSize: 15,
+                          weight: FontWeight.w600,
+                          color: isDark ? Colors.white : AppColors.slate900,
                         ),
                       ),
                     ],
@@ -573,9 +928,9 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            Divider(height: 1, color: isDark ? Colors.white24 : const Color(0xFFE2E8F0)),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpace.lg),
+            Divider(height: 1, color: isDark ? Colors.white24 : AppColors.slate200),
+            const SizedBox(height: AppSpace.lg),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -583,231 +938,94 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Remaining Time',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
-                        fontWeight: FontWeight.w500,
+                      'REMAINING TIME',
+                      style: AppType.body(
+                        context,
+                        fontSize: 11,
+                        weight: FontWeight.w600,
+                        color: AppColors.textSecondary(isDark),
+                        letterSpacing: 0.6,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      _timeLeftString.isNotEmpty ? _timeLeftString : 'Calculating...',
-                      style: TextStyle(
+                      timeLeft,
+                      style: AppType.data(
+                        context,
                         fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        color: isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706),
-                        fontFamily: 'monospace',
+                        weight: FontWeight.w600,
+                        color: isDark ? AppColors.amberLight : const Color(0xFFD97706),
                       ),
                     ),
                   ],
                 ),
-                _isCheckingIn
-                    ? const CircularProgressIndicator(color: Color(0xFF0EA5E9))
-                    : ElevatedButton.icon(
-                        onPressed: _performCheckIn,
-                        icon: const Icon(Icons.qr_code_scanner_rounded, size: 18),
-                        label: const Text('Scan & Check In'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0EA5E9),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          elevation: 4,
-                          shadowColor: const Color(0xFF0EA5E9).withOpacity(0.4),
+                if (hasCheckedIn)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.success.withOpacity(0.12),
+                      borderRadius: AppRadius.smR,
+                      border: Border.all(color: AppColors.success.withOpacity(0.3), width: 1.5),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.check_circle_rounded, size: 16, color: AppColors.success),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Checked in',
+                          style: AppType.body(context, color: AppColors.success, weight: FontWeight.w700, fontSize: 13),
                         ),
-                      ),
+                      ],
+                    ),
+                  )
+                else
+                  _isCheckingIn
+                      ? SizedBox(
+                          width: 32,
+                          height: 32,
+                          child: CircularProgressIndicator(color: primaryColor, strokeWidth: 3),
+                        )
+                      : ElevatedButton.icon(
+                          onPressed: () => _performCheckIn(student, activeSlot),
+                          icon: const Icon(Icons.qr_code_scanner_rounded, size: 18),
+                          label: const Text('Scan & check in'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: primaryColor,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: AppRadius.smR),
+                            elevation: 2,
+                          ),
+                        ),
               ],
             ),
           ],
         ),
       ),
     );
-  }
 
-  Widget _buildTimetableSection(ThemeData theme, bool isDark) {
-    final days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8.0),
-          child: Row(
-            children: [
-              Icon(Icons.calendar_month_rounded, size: 20, color: theme.colorScheme.primary),
-              const SizedBox(width: 8),
-              Text(
-                'Weekly Timetable',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? Colors.white : const Color(0xFF1E293B),
-                  letterSpacing: -0.5,
-                ),
-              ),
-            ],
-          ),
-        ),
-        SizedBox(
-          height: 110,
-          child: FutureBuilder<List<TimetableSlot>>(
-            future: _timetableFuture,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: SizedBox(width: 30, height: 30, child: CircularProgressIndicator(strokeWidth: 2)));
-              }
-              if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF1E293B).withOpacity(0.3) : Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: isDark ? Colors.white.withOpacity(0.06) : const Color(0xFFE2E8F0),
-                        width: 1,
-                      ),
-                    ),
-                    child: Center(
-                      child: Text(
-                        'No timetable set for this course.',
-                        style: TextStyle(
-                          color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              }
-
-              final slots = snapshot.data!;
-              return ListView.builder(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: slots.length,
-                itemBuilder: (context, index) {
-                  final slot = slots[index];
-                  final dayName = days[slot.dayOfWeek - 1];
-                  final today = DateTime.now().weekday;
-                  final isToday = slot.dayOfWeek == today;
-
-                  return Container(
-                    width: 160,
-                    margin: const EdgeInsets.only(right: 12, bottom: 8, top: 4),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(18),
-                      gradient: isToday
-                          ? LinearGradient(
-                              colors: isDark
-                                  ? [theme.colorScheme.primary.withOpacity(0.25), const Color(0xFF1E293B)]
-                                  : [theme.colorScheme.primary.withOpacity(0.15), Colors.white],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            )
-                          : null,
-                      color: isToday ? null : (isDark ? const Color(0xFF1E293B) : Colors.white),
-                      border: Border.all(
-                        color: isToday
-                            ? theme.colorScheme.primary.withOpacity(0.5)
-                            : (isDark ? Colors.white.withOpacity(0.06) : const Color(0xFFE2E8F0)),
-                        width: isToday ? 1.5 : 1,
-                      ),
-                      boxShadow: isToday
-                          ? [
-                              BoxShadow(
-                                color: theme.colorScheme.primary.withOpacity(0.08),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
-                              )
-                            ]
-                          : null,
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                dayName,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                  color: isToday
-                                      ? (isDark ? Colors.white : theme.colorScheme.primary)
-                                      : (isDark ? Colors.white : const Color(0xFF1E293B)),
-                                ),
-                              ),
-                              if (isToday)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: theme.colorScheme.primary,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Text(
-                                    'Today',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.access_time_rounded,
-                                size: 13,
-                                color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
-                              ),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  '${slot.startTime} - ${slot.endTime}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: isDark ? Colors.grey[300] : const Color(0xFF475569),
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
-          ),
-        ),
-      ],
+    return Padding(
+      padding: const EdgeInsets.all(AppSpace.lg),
+      child: PulsingBorder(
+        color: primaryColor,
+        isLight: !isDark,
+        borderRadius: 16.0,
+        child: card,
+      ),
     );
   }
 
+
   Widget _buildVolumetricGuideCard(ThemeData theme, bool isDark) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      margin: const EdgeInsets.symmetric(horizontal: AppSpace.lg, vertical: AppSpace.sm),
       child: Card(
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(
-            color: isDark ? Colors.white.withOpacity(0.05) : const Color(0xFFE2E8F0),
-            width: 1,
-          ),
+          borderRadius: AppRadius.lgR,
+          side: BorderSide(color: AppColors.border(isDark), width: 1),
         ),
-        color: isDark ? const Color(0xFF1E293B).withOpacity(0.3) : Colors.white.withOpacity(0.5),
+        color: isDark ? AppColors.slate800.withOpacity(0.3) : Colors.white.withOpacity(0.5),
         child: ExpansionTile(
           shape: const Border(),
           trailing: Icon(
@@ -819,42 +1037,52 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
               _showGuide = expanded;
             });
           },
-          leading: Icon(
-            Icons.info_outline_rounded,
-            color: theme.colorScheme.primary,
-          ),
+          leading: Icon(Icons.info_outline_rounded, color: theme.colorScheme.primary),
           title: Text(
-            'How Volumetric Check-In Works',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: isDark ? Colors.white : const Color(0xFF1E293B),
+            'How volumetric check-in works',
+            style: AppType.display(
+              context,
+              fontSize: 14,
+              weight: FontWeight.w600,
+              color: AppColors.textPrimary(isDark),
             ),
           ),
           children: [
             Padding(
-              padding: const EdgeInsets.only(left: 16.0, right: 16.0, bottom: 16.0),
+              padding: const EdgeInsets.only(left: AppSpace.lg, right: AppSpace.lg, bottom: AppSpace.lg),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Divider(),
                   _buildGuideBullet(
+                    context,
                     Icons.pin_drop_rounded,
-                    '3D Geofencing',
-                    'Your device must be within the coordinates defining the classroom area.',
+                    'GPS geofence',
+                    'Your device must sit inside the coordinates that define the classroom boundary.',
                     isDark,
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: AppSpace.sm + 2),
                   _buildGuideBullet(
+                    context,
                     Icons.layers_rounded,
-                    'Altitude Matching',
-                    'Check-ins are rejected on other floors or below ground level.',
+                    'Altitude window',
+                    'Check-ins outside the volumetric height band (-8m to +12m) are rejected — restricting sign-ins from different floors.',
                     isDark,
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: AppSpace.sm + 2),
                   _buildGuideBullet(
+                    context,
+                    Icons.schedule_rounded,
+                    'Lesson clock',
+                    'Biometric check-in only unlocks once location and altitude hold and the scheduled lesson time has started.',
+                    isDark,
+                  ),
+                  const SizedBox(height: AppSpace.sm + 2),
+                  _buildGuideBullet(
+                    context,
                     Icons.fingerprint_rounded,
-                    'Biometric Lock',
-                    'Verifies physical attendance identity at the moment of registration.',
+                    'Biometric lock',
+                    'Confirms it is really you, on your own enrolled device, for the whole session.',
                     isDark,
                   ),
                 ],
@@ -866,32 +1094,29 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     );
   }
 
-  Widget _buildGuideBullet(IconData icon, String title, String desc, bool isDark) {
+  Widget _buildGuideBullet(BuildContext context, IconData icon, String title, String desc, bool isDark) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 18, color: const Color(0xFF818CF8)),
-        const SizedBox(width: 12),
+        Icon(icon, size: 18, color: Theme.of(context).colorScheme.primary),
+        const SizedBox(width: AppSpace.md),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 title,
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
+                style: AppType.display(
+                  context,
                   fontSize: 13,
-                  color: isDark ? Colors.white : const Color(0xFF1E293B),
+                  weight: FontWeight.w600,
+                  color: AppColors.textPrimary(isDark),
                 ),
               ),
               const SizedBox(height: 2),
               Text(
                 desc,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
-                  height: 1.25,
-                ),
+                style: AppType.body(context, fontSize: 12, color: AppColors.textSecondary(isDark), height: 1.3),
               ),
             ],
           ),
@@ -900,50 +1125,68 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     );
   }
 
-  Widget _buildStatusBadge(String status) {
-    Color color;
-    IconData icon;
-    
-    switch (status.toUpperCase()) {
-      case 'PRESENT':
-        color = const Color(0xFF10B981); // Emerald Green
-        icon = Icons.check_circle_rounded;
-        break;
-      case 'LATE':
-        color = const Color(0xFFF59E0B); // Amber
-        icon = Icons.schedule_rounded;
-        break;
-      case 'ABSENT':
-        color = const Color(0xFFEF4444); // Rose Red
-        icon = Icons.cancel_rounded;
-        break;
-      default:
-        color = const Color(0xFF6B7280); // Grey
-        icon = Icons.help_rounded;
-    }
+}
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withOpacity(0.2), width: 1.5),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: color),
-          const SizedBox(width: 4),
-          Text(
-            status,
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.bold,
-              fontSize: 12,
-            ),
+class PulsingBorder extends StatefulWidget {
+  final Widget child;
+  final Color color;
+  final double borderRadius;
+  final bool isLight;
+
+  const PulsingBorder({
+    super.key,
+    required this.child,
+    required this.color,
+    this.borderRadius = 16.0,
+    required this.isLight,
+  });
+
+  @override
+  State<PulsingBorder> createState() => _PulsingBorderState();
+}
+
+class _PulsingBorderState extends State<PulsingBorder> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
+    _animation = Tween<double>(begin: 0.15, end: 0.85).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, child) {
+        return Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(widget.borderRadius),
+            boxShadow: [
+              BoxShadow(
+                color: widget.color.withOpacity(_animation.value * (widget.isLight ? 0.35 : 0.65)),
+                blurRadius: 10 + 8 * _animation.value,
+                spreadRadius: 1 + 3 * _animation.value,
+              ),
+            ],
           ),
-        ],
-      ),
+          child: child,
+        );
+      },
+      child: widget.child,
     );
   }
 }

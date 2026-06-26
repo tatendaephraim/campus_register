@@ -1,5 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 
 import 'teacher.dart';
@@ -8,6 +11,7 @@ import 'google_sheets_automation_service.dart';
 import 'services/supabase_auth_service.dart';
 import 'teacher_dashboard_screen.dart';
 import 'teacher_repository.dart';
+import 'ui/design_tokens.dart';
 
 class TeacherLoginScreen extends StatefulWidget {
   const TeacherLoginScreen({super.key});
@@ -22,11 +26,13 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> with SingleTick
   
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
   final _nameController = TextEditingController();
   
   bool _isLoading = false;
   bool _isSignUpMode = false;
   bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
 
   @override
   void initState() {
@@ -39,6 +45,7 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> with SingleTick
     _tabController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     _nameController.dispose();
     super.dispose();
   }
@@ -76,6 +83,12 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> with SingleTick
           savedTeacher = await teacherRepo.upsertTeacher(updatedTeacher);
         }
       }
+
+      try {
+        final directory = await getApplicationDocumentsDirectory();
+        final file = File('${directory.path}/.logged_in_teacher_email');
+        await file.writeAsString(savedTeacher.email);
+      } catch (_) {}
 
       setState(() => _isLoading = false);
 
@@ -123,6 +136,12 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> with SingleTick
           
           final savedTeacher = await teacherRepo.upsertTeacher(newTeacher);
 
+          try {
+            final directory = await getApplicationDocumentsDirectory();
+            final file = File('${directory.path}/.logged_in_teacher_email');
+            await file.writeAsString(savedTeacher.email);
+          } catch (_) {}
+
           if (!mounted) return;
           
           ScaffoldMessenger.of(context).showSnackBar(
@@ -154,6 +173,12 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> with SingleTick
           );
 
           final savedTeacher = await teacherRepo.upsertTeacher(newTeacher);
+
+          try {
+            final directory = await getApplicationDocumentsDirectory();
+            final file = File('${directory.path}/.logged_in_teacher_email');
+            await file.writeAsString(savedTeacher.email);
+          } catch (_) {}
 
           if (!mounted) return;
 
@@ -195,8 +220,8 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> with SingleTick
         context: context,
         builder: (context) {
           return AlertDialog(
-            title: const Text('Select Teacher (Dev Bypass)'),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: Text('Select teacher (dev bypass)', style: AppType.display(context, fontSize: 17, weight: FontWeight.w600)),
+            shape: RoundedRectangleBorder(borderRadius: AppRadius.xlR),
             content: SizedBox(
               width: double.maxFinite,
               child: ListView.separated(
@@ -238,6 +263,12 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> with SingleTick
       );
 
       if (selectedTeacher != null && context.mounted) {
+        try {
+          final directory = await getApplicationDocumentsDirectory();
+          final file = File('${directory.path}/.logged_in_teacher_email');
+          await file.writeAsString(selectedTeacher.email);
+        } catch (_) {}
+
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
             builder: (context) => TeacherDashboardScreen(teacher: selectedTeacher),
@@ -250,6 +281,12 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> with SingleTick
         email: 'teacher1@school.edu',
       );
       final savedTeacher = await teacherRepo.upsertTeacher(newTeacher);
+
+      try {
+        final directory = await getApplicationDocumentsDirectory();
+        final file = File('${directory.path}/.logged_in_teacher_email');
+        await file.writeAsString(savedTeacher.email);
+      } catch (_) {}
 
       if (!context.mounted) return;
       Navigator.of(context).pushReplacement(
@@ -275,53 +312,61 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> with SingleTick
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: isDark
-                ? [
-                    const Color(0xFF0F172A),
-                    const Color(0xFF1E293B),
-                  ]
-                : [
-                    const Color(0xFFF8FAFC),
-                    const Color(0xFFEEF2F6),
-                  ],
+                ? [AppColors.slate900, AppColors.slate800]
+                : [AppColors.slate50, const Color(0xFFEEF2F6)],
           ),
         ),
         child: SingleChildScrollView(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 36.0),
+            padding: const EdgeInsets.symmetric(horizontal: AppSpace.xxl, vertical: AppSpace.huge - 4),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Icon(
-                  Icons.school_rounded,
-                  size: 72,
-                  color: Color(0xFF4F46E5),
+                Center(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.indigoDark.withOpacity(0.15),
+                          blurRadius: 28,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: SvgPicture.asset(
+                      'assets/images/logo.svg',
+                      width: 90,
+                      height: 90,
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: AppSpace.lg),
                 Text(
                   'Faculty Sign-In',
                   textAlign: TextAlign.center,
-                  style: theme.textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white : const Color(0xFF1E293B),
+                  style: AppType.display(
+                    context,
+                    fontSize: 28,
+                    weight: FontWeight.w700,
+                    color: AppColors.textPrimary(isDark),
                     letterSpacing: -0.8,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpace.sm),
                 Text(
                   'Manage courses, classrooms, and check-in rosters',
                   textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
-                  ),
+                  style: AppType.body(context, fontSize: 14, color: AppColors.textSecondary(isDark)),
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: AppSpace.xxxl),
                 
-                // Premium Pill Tab Switcher
+                // Premium Pill Tab Switcher (Hidden but preserved in code)
+                if (false)
                 Container(
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
-                    borderRadius: BorderRadius.circular(16),
+                    color: isDark ? AppColors.slate800 : AppColors.slate200,
+                    borderRadius: AppRadius.lgR,
                   ),
                   child: TabBar(
                     controller: _tabController,
@@ -329,7 +374,7 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> with SingleTick
                     indicatorSize: TabBarIndicatorSize.tab,
                     indicator: BoxDecoration(
                       color: theme.colorScheme.primary,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: AppRadius.mdR,
                       boxShadow: [
                         BoxShadow(
                           color: theme.colorScheme.primary.withOpacity(0.3),
@@ -339,8 +384,8 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> with SingleTick
                       ],
                     ),
                     labelColor: Colors.white,
-                    unselectedLabelColor: isDark ? Colors.grey[400] : const Color(0xFF64748B),
-                    labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+                    unselectedLabelColor: AppColors.textSecondary(isDark),
+                    labelStyle: AppType.body(context, weight: FontWeight.w700),
                     tabs: const [
                       Tab(text: 'Google Sign-In'),
                       Tab(text: 'Email / Supabase'),
@@ -348,37 +393,132 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> with SingleTick
                   ),
                 ),
                 
-                const SizedBox(height: 24),
+                if (false) const SizedBox(height: 24),
                 
                 // Form Card Container
                 Card(
                   elevation: 0,
                   margin: EdgeInsets.zero,
                   child: Padding(
-                    padding: const EdgeInsets.all(24.0),
-                    child: SizedBox(
-                      height: 320,
-                      child: TabBarView(
-                        controller: _tabController,
-                        physics: const NeverScrollableScrollPhysics(),
-                        children: [
-                          // Google Sign In Tab
-                          Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
+                    padding: const EdgeInsets.all(AppSpace.xxl),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Supabase Email Sign In Form (Rendered directly to prevent squashed UI)
+                        Form(
+                          key: _formKey,
+                          child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(
-                                'Access your faculty account securely via Google Authentication.',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  height: 1.4,
-                                  color: isDark ? Colors.grey[350] : const Color(0xFF475569),
+                              if (_isSignUpMode) ...[
+                                TextFormField(
+                                  controller: _nameController,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Full name',
+                                    prefixIcon: Icon(Icons.person_rounded),
+                                  ),
+                                  validator: (val) => val == null || val.isEmpty ? 'Enter your name' : null,
                                 ),
+                                const SizedBox(height: AppSpace.md),
+                              ],
+                              TextFormField(
+                                controller: _emailController,
+                                keyboardType: TextInputType.emailAddress,
+                                decoration: const InputDecoration(
+                                  labelText: 'Faculty email',
+                                  prefixIcon: Icon(Icons.email_rounded),
+                                ),
+                                validator: (val) => val == null || !val.contains('@') ? 'Enter a valid email' : null,
                               ),
-                              const SizedBox(height: 32),
+                              const SizedBox(height: AppSpace.md),
+                              TextFormField(
+                                controller: _passwordController,
+                                obscureText: _obscurePassword,
+                                decoration: InputDecoration(
+                                  labelText: 'Password',
+                                  prefixIcon: const Icon(Icons.lock_rounded),
+                                  suffixIcon: IconButton(
+                                    icon: Icon(_obscurePassword ? Icons.visibility_rounded : Icons.visibility_off_rounded),
+                                    onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                                  ),
+                                ),
+                                validator: (val) => val == null || val.length < 6 ? 'Password must be at least 6 characters' : null,
+                              ),
+                              if (_isSignUpMode) ...[
+                                const SizedBox(height: AppSpace.md),
+                                TextFormField(
+                                  controller: _confirmPasswordController,
+                                  obscureText: _obscureConfirmPassword,
+                                  decoration: InputDecoration(
+                                    labelText: 'Confirm password',
+                                    prefixIcon: const Icon(Icons.lock_outline_rounded),
+                                    suffixIcon: IconButton(
+                                      icon: Icon(_obscureConfirmPassword ? Icons.visibility_rounded : Icons.visibility_off_rounded),
+                                      onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+                                    ),
+                                  ),
+                                  validator: (val) {
+                                    if (val == null || val.isEmpty) {
+                                      return 'Please confirm your password';
+                                    }
+                                    if (val != _passwordController.text) {
+                                      return 'Passwords do not match';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ],
+                              const SizedBox(height: AppSpace.xl),
                               _isLoading
                                   ? const Center(child: CircularProgressIndicator())
-                                  : ElevatedButton.icon(
+                                  : ElevatedButton(
+                                      onPressed: _handleSupabaseAuth,
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: theme.colorScheme.primary,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(vertical: 15),
+                                      ),
+                                      child: Text(_isSignUpMode ? 'Register account' : 'Sign in'),
+                                    ),
+                              const SizedBox(height: AppSpace.sm),
+                              TextButton(
+                                onPressed: () => setState(() {
+                                  _isSignUpMode = !_isSignUpMode;
+                                  _confirmPasswordController.clear();
+                                }),
+                                child: Text(
+                                  _isSignUpMode ? 'Already have an account? Sign in' : "Don't have an account? Register",
+                                  style: AppType.body(context, fontSize: 13, weight: FontWeight.w600),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // Google Sign-In Tab (Hidden but preserved in code)
+                        if (false)
+                          SizedBox(
+                            height: 320,
+                            child: TabBarView(
+                              controller: _tabController,
+                              physics: const NeverScrollableScrollPhysics(),
+                              children: [
+                                Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    Text(
+                                      'Access your faculty account securely via Google Authentication.',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        height: 1.4,
+                                        color: isDark ? Colors.grey[350] : AppColors.slate600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 32),
+                                    ElevatedButton.icon(
                                       icon: const Icon(Icons.login_rounded),
                                       label: const Text('Sign in with Google'),
                                       onPressed: () => _handleGoogleSignIn(context),
@@ -390,92 +530,32 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> with SingleTick
                                         padding: const EdgeInsets.symmetric(vertical: 16),
                                       ),
                                     ),
-                            ],
-                          ),
-                          
-                          // Supabase Email Sign In Tab
-                          Form(
-                            key: _formKey,
-                            child: SingleChildScrollView(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  if (_isSignUpMode) ...[
-                                    TextFormField(
-                                      controller: _nameController,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Full Name',
-                                        prefixIcon: Icon(Icons.person),
-                                      ),
-                                      validator: (val) => val == null || val.isEmpty ? 'Enter your name' : null,
-                                    ),
-                                    const SizedBox(height: 12),
                                   ],
-                                  TextFormField(
-                                    controller: _emailController,
-                                    keyboardType: TextInputType.emailAddress,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Faculty Email',
-                                      prefixIcon: Icon(Icons.email),
-                                    ),
-                                    validator: (val) => val == null || !val.contains('@') ? 'Enter a valid email' : null,
-                                  ),
-                                  const SizedBox(height: 12),
-                                  TextFormField(
-                                    controller: _passwordController,
-                                    obscureText: _obscurePassword,
-                                    decoration: InputDecoration(
-                                      labelText: 'Password',
-                                      prefixIcon: const Icon(Icons.lock),
-                                      suffixIcon: IconButton(
-                                        icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off),
-                                        onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
-                                      ),
-                                    ),
-                                    validator: (val) => val == null || val.length < 6 ? 'Password must be at least 6 characters' : null,
-                                  ),
-                                  const SizedBox(height: 20),
-                                  _isLoading
-                                      ? const Center(child: CircularProgressIndicator())
-                                      : ElevatedButton(
-                                          onPressed: _handleSupabaseAuth,
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: theme.colorScheme.primary,
-                                            foregroundColor: Colors.white,
-                                            padding: const EdgeInsets.symmetric(vertical: 14),
-                                          ),
-                                          child: Text(_isSignUpMode ? 'Register Account' : 'Sign In'),
-                                        ),
-                                  const SizedBox(height: 8),
-                                  TextButton(
-                                    onPressed: () => setState(() => _isSignUpMode = !_isSignUpMode),
-                                    child: Text(_isSignUpMode ? 'Already have an account? Sign In' : "Don't have an account? Register"),
-                                  ),
-                                ],
-                              ),
+                                ),
+                                Container(),
+                              ],
                             ),
                           ),
-                        ],
-                      ),
+                      ],
                     ),
                   ),
                 ),
                 
-                const Divider(height: 48),
-                
-                // Developer Bypass
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.developer_mode_rounded),
-                  label: const Text('Developer Login (Bypass Auth)'),
-                  onPressed: () => _handleDevSignIn(context),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFFF59E0B),
-                    side: const BorderSide(color: Color(0xFFF59E0B), width: 1.5),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                // Developer Bypass (Hidden but preserved in code)
+                if (false) ...[
+                  const Divider(height: 48),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.developer_mode_rounded),
+                    label: const Text('Developer Login (Bypass Auth)'),
+                    onPressed: () => _handleDevSignIn(context),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFF59E0B),
+                      side: const BorderSide(color: Color(0xFFF59E0B), width: 1.5),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),

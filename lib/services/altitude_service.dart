@@ -39,13 +39,8 @@ class AltitudeService {
 
   /// Gets the combined altitude using both Barometer (if available) and GPS.
   double getCombinedAltitude(double gpsAltitude) {
-    if (_latestPressure != null) {
-      final barometerAlt = pressureToAltitude(_latestPressure!);
-      print("Altitude Debug: Barometer=$barometerAlt m, GPS=$gpsAltitude m");
-      // Average the two to avoid anomalies
-      return (barometerAlt + gpsAltitude) / 2.0;
-    }
-    print("Altitude Debug: GPS Only=$gpsAltitude m (Barometer unavailable)");
+    // Bypassing barometric pressure averaging to avoid uncalibrated drift anomalies.
+    print("Altitude Debug: GPS Only (barometer bypassed)=$gpsAltitude m");
     return gpsAltitude;
   }
 

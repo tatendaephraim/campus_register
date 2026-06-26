@@ -3,6 +3,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'database_helper.dart';
 import 'attendance_record.dart';
+import 'course_repository.dart';
+import 'timetable_repository.dart';
+import 'student_repository.dart';
 
 /// Repository for handling the check-in process.
 class CheckInRepository {
@@ -278,6 +281,135 @@ class CheckInRepository {
           latitude: 0,
           longitude: 0);
       await createAttendanceRecord(newRecord);
+    }
+  }
+
+  /// Automatically marks students as ABSENT if they missed class sessions that have already completed.
+  Future<void> backfillAbsentRecords(int courseId) async {
+    try {
+      final db = await dbHelper.database;
+      
+      // 1. Get the course
+      final course = await CourseRepository().getCourseById(courseId);
+      if (course == null) return;
+      
+      // 2. Get all timetable slots for the course
+      final slots = await TimetableRepository().getTimetableForCourse(courseId);
+      if (slots.isEmpty) return;
+      
+      // 3. Get all students for the course
+      final students = await StudentRepository().getStudentsForCourse(courseId);
+      if (students.isEmpty) return;
+      
+      final now = DateTime.now();
+      
+      // Let's normalize startDate to start of day
+      DateTime startDate = DateTime(course.startDate.year, course.startDate.month, course.startDate.day);
+      DateTime endDate = DateTime(now.year, now.month, now.day);
+      
+      // Limit lookback to last 30 days to avoid huge loops or operations on misconfigured dates
+      final thirtyDaysAgo = endDate.subtract(const Duration(days: 30));
+      if (startDate.isBefore(thirtyDaysAgo)) {
+        startDate = thirtyDaysAgo;
+      }
+      
+      // 4. Gather all existing records for the course's slots to avoid querying inside the loops
+      final slotIds = slots.map((s) => s.id!).toList();
+      if (slotIds.isEmpty) return;
+      
+      final String placeholders = slotIds.map((_) => '?').join(', ');
+      final String query = '''
+        SELECT student_id, timetable_slot_id, timestamp 
+        FROM attendance_records 
+        WHERE timetable_slot_id IN ($placeholders)
+      ''';
+      
+      final List<Map<String, dynamic>> existingRows = await db.rawQuery(query, slotIds);
+      
+      final Set<String> existingRecordsSet = {};
+      for (final row in existingRows) {
+        final studentId = row['student_id'] as int;
+        final slotId = row['timetable_slot_id'] as int;
+        final timestampStr = row['timestamp'] as String;
+        final timestamp = DateTime.parse(timestampStr);
+        final dateKey = "${timestamp.year}-${timestamp.month}-${timestamp.day}";
+        existingRecordsSet.add("${studentId}_${slotId}_$dateKey");
+      }
+      
+      final List<AttendanceRecord> newAbsentRecords = [];
+      
+      // Loop through each day from startDate to endDate (inclusive)
+      for (int i = 0; i <= endDate.difference(startDate).inDays; i++) {
+        final checkDate = startDate.add(Duration(days: i));
+        final weekday = checkDate.weekday;
+        
+        final daySlots = slots.where((s) => s.dayOfWeek == weekday).toList();
+        for (final slot in daySlots) {
+          final timeParts = slot.endTime.split(':');
+          final endHour = int.parse(timeParts[0]);
+          final endMinute = int.parse(timeParts[1]);
+          
+          final slotEndDateTime = DateTime(checkDate.year, checkDate.month, checkDate.day, endHour, endMinute);
+          
+          // If the slot has already ended (plus 10 mins buffer for late/grace check-in)
+          if (now.isAfter(slotEndDateTime.add(const Duration(minutes: 10)))) {
+            final dateKey = "${checkDate.year}-${checkDate.month}-${checkDate.day}";
+            
+            for (final student in students) {
+              final lookupKey = "${student.id}_${slot.id}_$dateKey";
+              if (!existingRecordsSet.contains(lookupKey)) {
+                newAbsentRecords.add(
+                  AttendanceRecord(
+                    studentId: student.id!,
+                    timetableSlotId: slot.id!,
+                    type: 'AUTO',
+                    timestamp: slotEndDateTime,
+                    status: 'ABSENT',
+                    location: 'N/A',
+                    altitude: 0,
+                    latitude: 0,
+                    longitude: 0,
+                  ),
+                );
+              }
+            }
+          }
+        }
+      }
+      
+      if (newAbsentRecords.isNotEmpty) {
+        print("Backfilling ${newAbsentRecords.length} ABSENT records...");
+        
+        try {
+          final List<Map<String, dynamic>> mapsToInsert = newAbsentRecords.map((record) {
+            final map = record.toMap();
+            map.remove('id');
+            return map;
+          }).toList();
+          
+          final List<dynamic> response = await _supabase
+              .from('attendance_records')
+              .insert(mapsToInsert)
+              .select();
+              
+          final synced = response.map((item) => AttendanceRecord.fromMap(item as Map<String, dynamic>)).toList();
+          final batch = db.batch();
+          for (final record in synced) {
+            batch.insert('attendance_records', record.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+          }
+          await batch.commit(noResult: true);
+          print("✅ Synced and saved backfilled ABSENT records");
+        } catch (e) {
+          print("⚠️ Supabase backfill insert error, saving locally only: $e");
+          final batch = db.batch();
+          for (final record in newAbsentRecords) {
+            batch.insert('attendance_records', record.toMap(), conflictAlgorithm: ConflictAlgorithm.ignore);
+          }
+          await batch.commit(noResult: true);
+        }
+      }
+    } catch (e, stack) {
+      print("Error in backfillAbsentRecords: $e\n$stack");
     }
   }
 }
