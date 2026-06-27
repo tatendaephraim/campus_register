@@ -14,6 +14,7 @@ import 'create_course_screen.dart';
 import 'course_details_screen.dart';
 import 'role_selection_screen.dart';
 import 'manage_venues_screen.dart';
+import 'venue_editor_screen.dart';
 import 'venue.dart' as app_models;
 import 'venue_repository.dart';
 import 'about_screen.dart';
@@ -496,6 +497,9 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
                 },
               ),
             ),
+            const SliverToBoxAdapter(
+              child: SizedBox(height: 100.0),
+            ),
           ],
         ),
       ),
@@ -652,6 +656,50 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
           ),
           _buildDrawerItem(
             context,
+            icon: Icons.meeting_room_rounded,
+            title: 'Classroom manager',
+            theme: theme,
+            isDark: isDark,
+            isActive: false,
+            indent: 16.0,
+            onTap: () {
+              Navigator.of(context).pop();
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (context) => const ManageVenuesScreen()),
+              );
+            },
+          ),
+          _buildDrawerItem(
+            context,
+            icon: Icons.create_new_folder_rounded,
+            title: 'Create course',
+            theme: theme,
+            isDark: isDark,
+            isActive: false,
+            indent: 16.0,
+            onTap: () {
+              Navigator.of(context).pop();
+              _navigateToCreateCourse();
+            },
+          ),
+          _buildDrawerItem(
+            context,
+            icon: Icons.add_location_alt_rounded,
+            title: 'Add classroom',
+            theme: theme,
+            isDark: isDark,
+            isActive: false,
+            indent: 16.0,
+            onTap: () {
+              Navigator.of(context).pop();
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (context) => const VenueEditorScreen()),
+              );
+            },
+          ),
+          const Spacer(),
+          _buildDrawerItem(
+            context,
             icon: Icons.settings_rounded,
             title: 'Settings',
             theme: theme,
@@ -678,8 +726,6 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
               );
             },
           ),
-          const Spacer(),
-          // Sign Out with clear separator
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpace.xl, vertical: AppSpace.sm),
             child: Divider(color: AppColors.border(isDark), height: 1),
@@ -739,13 +785,19 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
     required bool isDark,
     required bool isActive,
     Color? color,
+    double indent = 0.0,
     required VoidCallback onTap,
   }) {
     final activeColor = color ?? theme.colorScheme.primary;
     final defaultColor = AppColors.textSecondary(isDark);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpace.md + 2, vertical: 3.0),
+      padding: EdgeInsets.only(
+        left: (AppSpace.md + 2) + indent,
+        right: AppSpace.md + 2,
+        top: 3.0,
+        bottom: 3.0,
+      ),
       child: InkWell(
         onTap: onTap,
         borderRadius: AppRadius.mdR,
@@ -774,7 +826,7 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
               Icon(
                 icon,
                 color: isActive ? activeColor : defaultColor,
-                size: 20,
+                size: indent > 0 ? 18.0 : 20.0,
               ),
               const SizedBox(width: AppSpace.md),
               Expanded(
@@ -784,7 +836,7 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
                     context,
                     weight: isActive ? FontWeight.w700 : FontWeight.w600,
                     color: isActive ? activeColor : AppColors.textPrimary(isDark),
-                    fontSize: 14.5,
+                    fontSize: indent > 0 ? 13.5 : 14.5,
                   ),
                 ),
               ),

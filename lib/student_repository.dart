@@ -150,12 +150,25 @@ class StudentRepository {
           deviceAppId: newDeviceAppId,
         );
 
-        await db.update(
-          'students',
-          updatedStudent.toMap(),
-          where: 'id = ?',
-          whereArgs: [student.id],
-        );
+        if (supabaseUpdatedStudent != null) {
+          await db.delete(
+            'students',
+            where: 'id = ?',
+            whereArgs: [student.id],
+          );
+          await db.insert(
+            'students',
+            supabaseUpdatedStudent.toMap(),
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        } else {
+          await db.update(
+            'students',
+            updatedStudent.toMap(),
+            where: 'id = ?',
+            whereArgs: [student.id],
+          );
+        }
         return updatedStudent;
       } else if (supabaseUpdatedStudent != null) {
         // If found in Supabase but not locally, cache it locally

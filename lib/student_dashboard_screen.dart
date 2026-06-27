@@ -13,6 +13,7 @@ import 'location_service.dart';
 import 'google_sheets_sync_service.dart';
 import 'venue_repository.dart';
 import 'course_repository.dart';
+import 'student_profile_screen.dart';
 import 'check_in_repository.dart';
 import 'services/biometric_service.dart';
 import 'services/altitude_service.dart';
@@ -343,118 +344,107 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     );
   }
 
-  void _showStudentProfileDialog() {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Row(
-            children: [
-              Icon(Icons.account_circle_rounded, size: 28, color: theme.colorScheme.primary),
-              const SizedBox(width: AppSpace.sm),
-              Text('Student profile', style: AppType.display(context, fontSize: 17, weight: FontWeight.w600)),
-            ],
-          ),
-          shape: RoundedRectangleBorder(borderRadius: AppRadius.xlR),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'NAME',
-                style: AppType.body(context, weight: FontWeight.w700, color: AppColors.textSecondary(isDark), fontSize: 11, letterSpacing: 0.4),
-              ),
-              Text(
-                _currentStudent.name,
-                style: AppType.display(context, weight: FontWeight.w600, fontSize: 16),
-              ),
-              const SizedBox(height: AppSpace.md),
-              Text(
-                'BOUND DEVICE ID',
-                style: AppType.body(context, weight: FontWeight.w700, color: AppColors.textSecondary(isDark), fontSize: 11, letterSpacing: 0.4),
-              ),
-              SelectableText(
-                _currentStudent.deviceAppId,
-                style: AppType.data(context, fontSize: 13),
-              ),
-              const SizedBox(height: AppSpace.md),
-              Text(
-                'ENROLLED COURSES',
-                style: AppType.body(context, weight: FontWeight.w700, color: AppColors.textSecondary(isDark), fontSize: 11, letterSpacing: 0.4),
-              ),
-              const SizedBox(height: 4),
-              ..._studentProfiles.map((profile) {
-                final course = _courseByProfileId[profile.id!];
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 4.0),
-                  child: Text(
-                    course?.name ?? 'Loading…',
-                    style: AppType.display(context, fontSize: 13.5, weight: FontWeight.w600),
-                  ),
-                );
-              }),
-              const SizedBox(height: AppSpace.xl),
-              const Divider(),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () async {
-                    final confirm = await showDialog<bool>(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('Reset Device Binding'),
-                        content: const Text(
-                          'Warning: This will delete all course enrollments registered to this device. You will need a new invitation code to sign in again.\n\nDo you want to proceed?',
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.of(context).pop(false),
-                            child: const Text('Cancel'),
-                          ),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.danger,
-                              foregroundColor: Colors.white,
-                            ),
-                            onPressed: () => Navigator.of(context).pop(true),
-                            child: const Text('Reset binding'),
-                          ),
-                        ],
-                      ),
-                    );
-
-                    if (confirm == true) {
-                      await StudentRepository().deleteStudent(_currentStudent.id!);
-                      if (context.mounted) {
-                        Navigator.of(context).pop(); // dismiss profile dialog
-                        _handleSignOut();
-                      }
-                    }
-                  },
-                  icon: const Icon(Icons.phonelink_erase_rounded, size: 16),
-                  label: const Text('Reset Device Binding'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.danger,
-                    side: const BorderSide(color: AppColors.danger),
-                    shape: RoundedRectangleBorder(borderRadius: AppRadius.smR),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Close'),
-            ),
-          ],
-        );
-      },
+  void _navigateToStudentProfile() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => StudentProfileScreen(
+          currentStudent: _currentStudent,
+          studentProfiles: _studentProfiles,
+          courseByProfileId: _courseByProfileId,
+          attendanceByProfileId: _attendanceByProfileId,
+        ),
+      ),
     );
+  }
+
+  TimetableSlot? _getNextLesson(List<TimetableSlot> slots) {
+    if (slots.isEmpty) return null;
+    final now = DateTime.now();
+    final currentWeekday = now.weekday;
+
+    TimetableSlot? nextSlot;
+    Duration? minDiff;
+
+    for (final slot in slots) {
+      final timeParts = slot.startTime.split(':');
+      if (timeParts.length != 2) continue;
+      final hour = int.parse(timeParts[0]);
+      final minute = int.parse(timeParts[1]);
+
+      int daysUntil = slot.dayOfWeek - currentWeekday;
+      if (daysUntil < 0) {
+        daysUntil += 7;
+      } else if (daysUntil == 0) {
+        // It's today. Check if the start time has already passed.
+        final slotStartToday = DateTime(now.year, now.month, now.day, hour, minute);
+        if (slotStartToday.isBefore(now)) {
+          daysUntil = 7; // Next week
+        }
+      }
+
+      final targetDate = now.add(Duration(days: daysUntil));
+      final targetStart = DateTime(targetDate.year, targetDate.month, targetDate.day, hour, minute);
+      final diff = targetStart.difference(now);
+
+      if (minDiff == null || diff < minDiff) {
+        minDiff = diff;
+        nextSlot = slot;
+      }
+    }
+
+    return nextSlot;
+  }
+
+  String _getTimeRemainingToNext(TimetableSlot slot) {
+    try {
+      final now = DateTime.now();
+      final currentWeekday = now.weekday;
+      
+      final timeParts = slot.startTime.split(':');
+      final hour = int.parse(timeParts[0]);
+      final minute = int.parse(timeParts[1]);
+
+      int daysUntil = slot.dayOfWeek - currentWeekday;
+      if (daysUntil < 0) {
+        daysUntil += 7;
+      } else if (daysUntil == 0) {
+        final slotStartToday = DateTime(now.year, now.month, now.day, hour, minute);
+        if (slotStartToday.isBefore(now)) {
+          daysUntil = 7;
+        }
+      }
+
+      final targetDate = now.add(Duration(days: daysUntil));
+      final targetStart = DateTime(targetDate.year, targetDate.month, targetDate.day, hour, minute);
+      final difference = targetStart.difference(now);
+
+      final days = difference.inDays;
+      final hours = difference.inHours.remainder(24);
+      final minutes = difference.inMinutes.remainder(60);
+
+      if (days > 0) {
+        return '${days}d ${hours}h remaining';
+      } else if (hours > 0) {
+        return '${hours}h ${minutes}m remaining';
+      } else {
+        return '${minutes}m remaining';
+      }
+    } catch (_) {
+      return 'Calculating…';
+    }
+  }
+
+  String _getDayName(int day) {
+    switch (day) {
+      case 1: return 'Mon';
+      case 2: return 'Tue';
+      case 3: return 'Wed';
+      case 4: return 'Thu';
+      case 5: return 'Fri';
+      case 6: return 'Sat';
+      case 7: return 'Sun';
+      default: return '';
+    }
   }
 
   String _getRemainingTime(TimetableSlot slot) {
@@ -661,14 +651,14 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                 ),
               ),
               const SliverToBoxAdapter(
-                child: SizedBox(height: AppSpace.xxl),
+                child: SizedBox(height: 100.0),
               ),
             ],
           ],
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showStudentProfileDialog,
+        onPressed: _navigateToStudentProfile,
         backgroundColor: theme.colorScheme.primary,
         foregroundColor: Colors.white,
         icon: const Icon(Icons.account_circle_rounded),
@@ -685,9 +675,9 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   ) {
     final course = _courseByProfileId[student.id!];
     if (course == null) {
-      return Card(
-        margin: const EdgeInsets.symmetric(horizontal: AppSpace.lg, vertical: AppSpace.sm),
-        child: const Padding(
+      return const Card(
+        margin: EdgeInsets.symmetric(horizontal: AppSpace.lg, vertical: AppSpace.sm),
+        child: Padding(
           padding: EdgeInsets.all(AppSpace.xl),
           child: Center(child: CircularProgressIndicator()),
         ),
@@ -696,6 +686,8 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
 
     final attendance = _attendanceByProfileId[student.id!] ?? [];
     final activeSlot = _activeSlotByProfileId[student.id!];
+    final slots = _timetableByProfileId[student.id!] ?? [];
+    final nextLesson = _getNextLesson(slots);
 
     // Calculate dynamic attendance rate for basic info
     double rate = 0.0;
@@ -801,6 +793,57 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                 ],
               ),
             ),
+
+            if (nextLesson != null) ...[
+              Padding(
+                padding: const EdgeInsets.only(left: AppSpace.lg, right: AppSpace.lg, bottom: AppSpace.lg),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: AppSpace.md, vertical: AppSpace.sm),
+                  decoration: BoxDecoration(
+                    color: isDark ? AppColors.slate900.withValues(alpha: 0.5) : AppColors.slate50,
+                    borderRadius: AppRadius.smR,
+                    border: Border.all(color: AppColors.border(isDark)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.schedule_rounded,
+                        size: 15,
+                        color: theme.colorScheme.primary,
+                      ),
+                      const SizedBox(width: AppSpace.sm),
+                      Expanded(
+                        child: Text(
+                          'Next: ${_getDayName(nextLesson.dayOfWeek)} at ${nextLesson.startTime}',
+                          style: AppType.body(
+                            context,
+                            fontSize: 12,
+                            weight: FontWeight.w600,
+                            color: AppColors.textPrimary(isDark),
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          _getTimeRemainingToNext(nextLesson),
+                          style: AppType.body(
+                            context,
+                            fontSize: 11,
+                            weight: FontWeight.w700,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
 
             // Live check-in overlay card if class active (flashing border container)
             if (activeSlot != null)

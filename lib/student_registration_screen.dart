@@ -259,16 +259,6 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
                 onPressed: () => Navigator.of(context).pop(),
                 child: const Text('Cancel'),
               ),
-              TextButton(
-                onPressed: () async {
-                  final newStudent = await _studentRepo.addStudent(
-                    'Demo Student ${students.length + 1}',
-                    students.first.courseId,
-                  );
-                  if (context.mounted) Navigator.of(context).pop(newStudent);
-                },
-                child: const Text('Create New Demo Student'),
-              ),
             ],
           );
         },
@@ -291,35 +281,12 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
         }
       }
     } else {
-      final teacherRepo = TeacherRepository();
-      final courseRepo = CourseRepository();
-
-      final teacher = await teacherRepo.upsertTeacher(Teacher(
-        name: 'Demo Teacher 1',
-        email: 'teacher1@school.edu',
-      ));
-
-      final course = await courseRepo.createCourse(Course(
-        teacherId: teacher.id!,
-        name: 'Demo Course 1',
-        schoolName: 'Demo School',
-        startDate: DateTime.now(),
-        endDate: DateTime.now().add(const Duration(days: 30)),
-      ));
-
-      final student = await _studentRepo.addStudent('Demo Student 1', course.id!);
-
-      final updatedStudent = await _studentRepo.registerDevice(
-        student.deviceAppId,
-        deviceId,
-      );
-
       setState(() => _isLoading = false);
-
-      if (updatedStudent != null && mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (context) => StudentDashboardScreen(student: updatedStudent),
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No registered students found. Please register students on the teacher portal first.'),
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }

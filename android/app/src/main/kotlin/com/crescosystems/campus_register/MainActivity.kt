@@ -1,4 +1,4 @@
-package com.example.campus_register
+package com.crescosystems.campus_register
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 
