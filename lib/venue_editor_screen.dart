@@ -9,7 +9,8 @@ import 'ui/design_tokens.dart';
 
 class VenueEditorScreen extends StatefulWidget {
   final app_models.Venue? venue;
-  const VenueEditorScreen({super.key, this.venue});
+  final int? organizationId;
+  const VenueEditorScreen({super.key, this.venue, this.organizationId});
 
   @override
   State<VenueEditorScreen> createState() => _VenueEditorScreenState();
@@ -20,6 +21,8 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
   final _nameController = TextEditingController();
   final _venueRepo = VenueRepository();
   final Completer<GoogleMapController> _mapController = Completer();
+
+  String _category = 'classroom'; // classroom | office | staff_room
 
   static const _initialCameraPosition = CameraPosition(
     target: LatLng(-1.927196, 30.140773), // Default campus location
@@ -37,6 +40,7 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
     if (widget.venue != null) {
       _nameController.text = widget.venue!.name;
       _altitude = widget.venue!.altitude;
+      _category = widget.venue!.category;
       if (widget.venue!.polygonCorners != null) {
         _polygonCorners.addAll(
           widget.venue!.polygonCorners!.map((c) => LatLng(c.latitude, c.longitude))
@@ -87,7 +91,7 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Classroom altitude captured: ${_altitude.toStringAsFixed(1)}m'),
+            content: Text('Venue altitude captured: ${_altitude.toStringAsFixed(1)}m'),
             backgroundColor: AppColors.success,
             behavior: SnackBarBehavior.floating,
           ),
@@ -171,7 +175,9 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
 
       final newVenue = app_models.Venue(
         id: widget.venue?.id, // Preserve original ID!
+        organizationId: widget.venue?.organizationId ?? widget.organizationId,
         name: _nameController.text,
+        category: _category,
         latitude: centerLat,
         longitude: centerLng,
         altitude: _altitude,
@@ -207,7 +213,7 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
           IconButton(
             icon: const Icon(Icons.check_circle_outline_rounded, size: 28),
             onPressed: _saveVenue,
-            tooltip: 'Save Classroom',
+            tooltip: 'Save Venue',
           ),
         ],
       ),
@@ -279,189 +285,292 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
               ],
             ),
           ),
-          Container(
-            padding: const EdgeInsets.all(AppSpace.xxl),
-            decoration: BoxDecoration(
-              color: isDark ? AppColors.slate800 : Colors.white,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, -5),
-                ),
-              ],
-            ),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  TextFormField(
-                    controller: _nameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Classroom name',
-                      prefixIcon: Icon(Icons.meeting_room_rounded),
-                    ),
-                    validator: (value) => value!.isEmpty ? 'Please enter a classroom name' : null,
+          Flexible(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpace.lg, vertical: AppSpace.md),
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.slate800 : Colors.white,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, -5),
                   ),
-                  if (_polygonCorners.isNotEmpty) ...[
-                    const SizedBox(height: AppSpace.md),
-                    Container(
-                      padding: const EdgeInsets.all(AppSpace.md),
-                      decoration: BoxDecoration(
-                        color: isDark ? AppColors.slate900 : AppColors.slate100,
-                        borderRadius: AppRadius.mdR,
-                        border: Border.all(color: theme.colorScheme.secondary.withOpacity(0.2), width: 1),
+                ],
+              ),
+              child: Form(
+                key: _formKey,
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // ── Category selector ──────────────────────────────
+                      _buildCategorySelector(),
+                      const SizedBox(height: AppSpace.md),
+                      TextFormField(
+                        controller: _nameController,
+                        decoration: InputDecoration(
+                          labelText: _categoryLabel(),
+                          prefixIcon: Icon(_categoryIcon()),
+                        ),
+                        validator: (value) => value!.isEmpty ? 'Please enter a name' : null,
                       ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.center_focus_strong_rounded,
-                            color: theme.colorScheme.secondary,
-                            size: 20,
+                      if (_polygonCorners.isNotEmpty) ...[
+                        const SizedBox(height: AppSpace.md),
+                        Container(
+                          padding: const EdgeInsets.all(AppSpace.md),
+                          decoration: BoxDecoration(
+                            color: isDark ? AppColors.slate900 : AppColors.slate100,
+                            borderRadius: AppRadius.mdR,
+                            border: Border.all(color: theme.colorScheme.secondary.withOpacity(0.2), width: 1),
                           ),
-                          const SizedBox(width: AppSpace.md),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Centroid coordinates (live)',
-                                  style: AppType.body(context, fontSize: 11.5, weight: FontWeight.w700, color: AppColors.textSecondary(isDark), letterSpacing: 0.4),
-                                ),
-                                const SizedBox(height: 2),
-                                Builder(
-                                  builder: (context) {
-                                    double latSum = 0;
-                                    double lngSum = 0;
-                                    for (var corner in _polygonCorners) {
-                                      latSum += corner.latitude;
-                                      lngSum += corner.longitude;
-                                    }
-                                    final centerLat = latSum / _polygonCorners.length;
-                                    final centerLng = lngSum / _polygonCorners.length;
-                                    return Text(
-                                      '${centerLat.toStringAsFixed(6)}, ${centerLng.toStringAsFixed(6)}',
-                                      style: AppType.data(context, fontSize: 14, weight: FontWeight.w600, color: AppColors.textPrimary(isDark)),
-                                    );
-                                  }
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: AppSpace.lg),
-                  Container(
-                    padding: const EdgeInsets.all(AppSpace.md),
-                    decoration: BoxDecoration(
-                      color: isDark ? AppColors.slate900 : AppColors.slate100,
-                      borderRadius: AppRadius.mdR,
-                      border: Border.all(color: AppColors.indigo.withOpacity(0.15), width: 1),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          child: Row(
                             children: [
-                              Text(
-                                'Floor altitude',
-                                style: AppType.body(context, fontSize: 11.5, weight: FontWeight.w700, color: AppColors.textSecondary(isDark), letterSpacing: 0.4),
+                              Icon(
+                                Icons.center_focus_strong_rounded,
+                                color: theme.colorScheme.secondary,
+                                size: 20,
                               ),
-                              const SizedBox(height: 2),
-                              Text(
-                                '${_altitude.toStringAsFixed(1)}m',
-                                style: AppType.data(context, fontSize: 19, weight: FontWeight.w600, color: AppColors.textPrimary(isDark)),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                '-8m to +12m volumetric tolerance band',
-                                style: AppType.body(context, fontSize: 11.5, color: AppColors.textTertiary(isDark)),
+                              const SizedBox(width: AppSpace.md),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Centroid coordinates (live)',
+                                      style: AppType.body(context, fontSize: 11.5, weight: FontWeight.w700, color: AppColors.textSecondary(isDark), letterSpacing: 0.4),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Builder(
+                                      builder: (context) {
+                                        double latSum = 0;
+                                        double lngSum = 0;
+                                        for (var corner in _polygonCorners) {
+                                          latSum += corner.latitude;
+                                          lngSum += corner.longitude;
+                                        }
+                                        final centerLat = latSum / _polygonCorners.length;
+                                        final centerLng = lngSum / _polygonCorners.length;
+                                        return Text(
+                                          '${centerLat.toStringAsFixed(6)}, ${centerLng.toStringAsFixed(6)}',
+                                          style: AppType.data(context, fontSize: 14, weight: FontWeight.w600, color: AppColors.textPrimary(isDark)),
+                                        );
+                                      }
+                                    ),
+                                  ],
+                                ),
                               ),
                             ],
                           ),
                         ),
-                        _isCapturingAltitude
-                            ? const CircularProgressIndicator()
-                            : ElevatedButton.icon(
-                                onPressed: _captureAltitude,
-                                icon: const Icon(Icons.height_rounded, size: 18),
-                                label: const Text('Capture floor'),
-                                style: ElevatedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                                  shape: RoundedRectangleBorder(borderRadius: AppRadius.smR),
-                                ),
-                              ),
                       ],
-                    ),
-                  ),
-                  const SizedBox(height: AppSpace.md),
-                  _isCapturingCornerGps
-                      ? const Center(child: CircularProgressIndicator())
-                      : ElevatedButton.icon(
-                          onPressed: _addCornerAtGps,
-                          icon: const Icon(Icons.gps_fixed_rounded, size: 18),
-                          label: const Text('Add corner at GPS location'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: theme.colorScheme.primary,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(borderRadius: AppRadius.mdR),
-                          ),
+                      const SizedBox(height: AppSpace.md),
+                      Container(
+                        padding: const EdgeInsets.all(AppSpace.md),
+                        decoration: BoxDecoration(
+                          color: isDark ? AppColors.slate900 : AppColors.slate100,
+                          borderRadius: AppRadius.mdR,
+                          border: Border.all(color: AppColors.indigo.withOpacity(0.15), width: 1),
                         ),
-                  const SizedBox(height: AppSpace.md),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _polygonCorners.isEmpty
-                              ? null
-                              : () {
-                                  setState(() {
-                                    _polygonCorners.removeLast();
-                                  });
-                                },
-                          icon: const Icon(Icons.undo_rounded, size: 18),
-                          label: const Text('Undo last'),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(borderRadius: AppRadius.smR),
-                          ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Floor altitude',
+                                    style: AppType.body(context, fontSize: 11.5, weight: FontWeight.w700, color: AppColors.textSecondary(isDark), letterSpacing: 0.4),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${_altitude.toStringAsFixed(1)}m',
+                                    style: AppType.data(context, fontSize: 19, weight: FontWeight.w600, color: AppColors.textPrimary(isDark)),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '-8m to +12m volumetric tolerance band',
+                                    style: AppType.body(context, fontSize: 11.5, color: AppColors.textTertiary(isDark)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            _isCapturingAltitude
+                                ? const CircularProgressIndicator()
+                                : ElevatedButton.icon(
+                                    onPressed: _captureAltitude,
+                                    icon: const Icon(Icons.height_rounded, size: 18),
+                                    label: const Text('Capture floor'),
+                                    style: ElevatedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                      shape: RoundedRectangleBorder(borderRadius: AppRadius.smR),
+                                    ),
+                                  ),
+                          ],
                         ),
                       ),
-                      const SizedBox(width: AppSpace.md),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _polygonCorners.isEmpty
-                              ? null
-                              : () {
-                                  setState(() {
-                                    _polygonCorners.clear();
-                                  });
-                                },
-                          icon: const Icon(Icons.clear_all_rounded, size: 18),
-                          label: const Text('Clear all'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.dangerDark,
-                            side: const BorderSide(color: AppColors.dangerDark),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(borderRadius: AppRadius.smR),
+                      const SizedBox(height: AppSpace.md),
+                      _isCapturingCornerGps
+                          ? const Center(child: CircularProgressIndicator())
+                          : ElevatedButton.icon(
+                              onPressed: _addCornerAtGps,
+                              icon: const Icon(Icons.gps_fixed_rounded, size: 18),
+                              label: const Text('Add corner at GPS location'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: theme.colorScheme.primary,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(borderRadius: AppRadius.mdR),
+                              ),
+                            ),
+                      const SizedBox(height: AppSpace.md),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _polygonCorners.isEmpty
+                                  ? null
+                                  : () {
+                                      setState(() {
+                                        _polygonCorners.removeLast();
+                                      });
+                                    },
+                              icon: const Icon(Icons.undo_rounded, size: 18),
+                              label: const Text('Undo last'),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: AppRadius.smR),
+                              ),
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: AppSpace.md),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _polygonCorners.isEmpty
+                                  ? null
+                                  : () {
+                                      setState(() {
+                                        _polygonCorners.clear();
+                                      });
+                                    },
+                              icon: const Icon(Icons.clear_all_rounded, size: 18),
+                              label: const Text('Clear all'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.dangerDark,
+                                side: const BorderSide(color: AppColors.dangerDark),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: AppRadius.smR),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  // ── Category helpers ──────────────────────────────────────────────────────
+
+  static const _categories = [
+    ('classroom', 'Classroom', Icons.class_rounded),
+    ('office',    'Office',    Icons.business_center_rounded),
+    ('staff_room','Staff Room',Icons.meeting_room_rounded),
+  ];
+
+  Widget _buildCategorySelector() {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'VENUE TYPE',
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textSecondary(theme.brightness == Brightness.dark),
+            letterSpacing: 0.8,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: _categories.map((cat) {
+            final (key, label, icon) = cat;
+            final isSelected = _category == key;
+            return Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.primary.withOpacity(0.06),
+                    borderRadius: AppRadius.mdR,
+                    border: Border.all(
+                      color: isSelected
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.primary.withOpacity(0.2),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: InkWell(
+                    borderRadius: AppRadius.mdR,
+                    onTap: () => setState(() => _category = key),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      child: Column(
+                        children: [
+                          Icon(
+                            icon,
+                            size: 20,
+                            color: isSelected ? Colors.white : theme.colorScheme.primary,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            label,
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                              color: isSelected ? Colors.white : theme.colorScheme.primary,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  String _categoryLabel() {
+    switch (_category) {
+      case 'office':     return 'Office name (e.g. Principal\'s Office)';
+      case 'staff_room': return 'Staff room name (e.g. Staff Room A)';
+      default:           return 'Classroom name (e.g. Room 101)';
+    }
+  }
+
+  IconData _categoryIcon() {
+    switch (_category) {
+      case 'office':     return Icons.business_center_rounded;
+      case 'staff_room': return Icons.meeting_room_rounded;
+      default:           return Icons.class_rounded;
+    }
   }
 }

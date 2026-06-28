@@ -51,13 +51,14 @@ class VenueRepository {
   }
 
   /// Fetches all venues from the database.
-  Future<List<Venue>> getAllVenues() async {
-    // Try Supabase first
+  Future<List<Venue>> getAllVenues({int? organizationId}) async {
+    // 1. Try syncing from Supabase to SQLite
     try {
-      final List<dynamic> response = await _supabase
-          .from('venues')
-          .select()
-          .order('name');
+      var query = _supabase.from('venues').select();
+      if (organizationId != null) {
+        query = query.eq('organization_id', organizationId);
+      }
+      final List<dynamic> response = await query.order('name');
       
       final venues = response.map((item) => Venue.fromMap(item as Map<String, dynamic>)).toList();
 
@@ -68,16 +69,15 @@ class VenueRepository {
         batch.insert('venues', venue.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
       }
       await batch.commit(noResult: true);
-
-      return venues;
     } catch (e) {
-      print('⚠️ Supabase fetch all venues error: $e');
+      print('⚠️ Supabase fetch and sync venues error: $e');
     }
 
-    // Fallback to SQLite
+    // 2. Always query SQLite as the single source of truth
     final db = await dbHelper.database;
-    final List<Map<String, dynamic>> maps =
-        await db.query('venues', orderBy: 'name');
+    final List<Map<String, dynamic>> maps = organizationId != null
+        ? await db.query('venues', where: 'organization_id = ?', whereArgs: [organizationId], orderBy: 'name')
+        : await db.query('venues', orderBy: 'name');
     return List.generate(maps.length, (i) => Venue.fromMap(maps[i]));
   }
 

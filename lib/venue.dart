@@ -20,7 +20,9 @@ class LatLng {
 /// Represents a physical venue with a 3D geofence boundary (polygon + altitude).
 class Venue {
   final int? id;
+  final int? organizationId;
   final String name;
+  final String category; // 'classroom', 'office', 'staff_room', 'other'
   final double latitude; // Center point latitude
   final double longitude; // Center point longitude
   final double altitude; // Center point elevation (ground level)
@@ -30,7 +32,9 @@ class Venue {
 
   Venue({
     this.id,
+    this.organizationId,
     required this.name,
+    this.category = 'classroom',
     required this.latitude,
     required this.longitude,
     required this.altitude,
@@ -51,7 +55,9 @@ class Venue {
 
     return Venue(
       id: map['id'] as int?,
+      organizationId: map['organization_id'] as int?,
       name: map['name'] as String,
+      category: map['category'] as String? ?? 'classroom',
       latitude: (map['latitude'] as num).toDouble(),
       longitude: (map['longitude'] as num).toDouble(),
       altitude: (map['altitude'] as num?)?.toDouble() ?? 1500.0,
@@ -65,7 +71,9 @@ class Venue {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'organization_id': organizationId,
       'name': name,
+      'category': category,
       'latitude': latitude,
       'longitude': longitude,
       'altitude': altitude,

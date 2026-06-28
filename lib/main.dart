@@ -11,6 +11,7 @@ import 'role_selection_screen.dart';
 import 'student_dashboard_screen.dart';
 import 'student_repository.dart';
 import 'teacher_dashboard_screen.dart';
+import 'admin_dashboard_screen.dart';
 import 'teacher_repository.dart';
 import 'onboarding_screen.dart';
 import 'ui/design_tokens.dart';
@@ -61,6 +62,9 @@ Future<Widget> _getInitialScreen() async {
       final email = (await file.readAsString()).trim();
       if (email.isNotEmpty) {
         final teacher = await TeacherRepository().getTeacherByEmail(email);
+        if (teacher.role.trim().toLowerCase() == 'admin') {
+          return AdminDashboardScreen(admin: teacher);
+        }
         return TeacherDashboardScreen(teacher: teacher);
       }
     }

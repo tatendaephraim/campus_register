@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lottie/lottie.dart';
@@ -5,6 +6,7 @@ import 'package:lottie/lottie.dart';
 import 'course.dart';
 import 'student.dart';
 import 'student_repository.dart';
+import 'teacher_repository.dart';
 import 'ui/design_tokens.dart';
 
 class ManageStudentsScreen extends StatefulWidget {
@@ -19,6 +21,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
   final _studentRepo = StudentRepository();
   late Future<List<Student>> _studentsFuture;
   List<String> _schoolRosterNames = [];
+  List<Student> _unenrolledStudents = [];
 
   @override
   void initState() {
@@ -35,35 +38,21 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
 
   Future<void> _loadSchoolRoster() async {
     try {
-      final allStudents = await _studentRepo.getAllStudents();
-      final names = allStudents.map((s) => s.name.trim()).toSet().toList();
-
-      final seedNames = [
-        'Tatenda Ephraim',
-        'Alex Carter',
-        'Jane Smith',
-        'John Doe',
-        'Emily Johnson',
-        'Michael Brown',
-        'Sarah Davis',
-        'David Miller',
-        'Jessica Wilson',
-        'James Taylor',
-        'Amanda Thomas',
-        'Robert Anderson'
-      ];
-
-      for (var seed in seedNames) {
-        if (!names.contains(seed)) {
-          names.add(seed);
-        }
+      final teacher =
+          await TeacherRepository().getTeacherById(widget.course.teacherId);
+      if (teacher != null && teacher.organizationId != null) {
+        final unenrolled = await _studentRepo.getUnenrolledStudentsForCourse(
+          widget.course.id!,
+          teacher.organizationId!,
+        );
+        setState(() {
+          _unenrolledStudents = unenrolled;
+          _schoolRosterNames = unenrolled.map((s) => s.name).toList();
+        });
       }
-
-      names.sort();
-      setState(() {
-        _schoolRosterNames = names;
-      });
-    } catch (_) {}
+    } catch (e) {
+      print('⚠️ Error loading school roster: $e');
+    }
   }
 
   Future<void> _showCreateNewRosterStudentDialog() async {
@@ -73,7 +62,9 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
     final newName = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Register new student in school', style: AppType.display(context, fontSize: 16.5, weight: FontWeight.w600)),
+        title: Text('Register new student in organization',
+            style: AppType.display(context,
+                fontSize: 16.5, weight: FontWeight.w600)),
         shape: RoundedRectangleBorder(borderRadius: AppRadius.xlR),
         content: Form(
           key: formKey,
@@ -81,8 +72,9 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'Enter the student\'s name below to register them in the global school roster database.',
-                style: AppType.body(context, color: AppColors.slate500, fontSize: 13),
+                'Enter the student\'s name below to submit a registration request to the organization.',
+                style: AppType.body(context,
+                    color: AppColors.slate500, fontSize: 13),
               ),
               const SizedBox(height: AppSpace.lg),
               TextFormField(
@@ -94,9 +86,6 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
                     return 'Please enter a name';
-                  }
-                  if (_schoolRosterNames.contains(value.trim())) {
-                    return 'Student already exists in roster';
                   }
                   return null;
                 },
@@ -115,24 +104,42 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
                 Navigator.of(context).pop(nameController.text.trim());
               }
             },
-            child: const Text('Create'),
+            child: const Text('Submit'),
           ),
         ],
       ),
     );
 
     if (newName != null && newName.isNotEmpty) {
-      setState(() {
-        _schoolRosterNames.add(newName);
-        _schoolRosterNames.sort();
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('"$newName" added to school roster. You can now select them.'),
-          backgroundColor: AppColors.success,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      try {
+        final teacher =
+            await TeacherRepository().getTeacherById(widget.course.teacherId);
+        if (teacher != null && teacher.organizationId != null) {
+          final tempRegCode = (100000 + Random().nextInt(900000)).toString();
+          await _studentRepo.addStudentToOrganization(
+              newName, tempRegCode, teacher.organizationId!);
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                    'Registration request for "$newName" submitted to Admin!'),
+                backgroundColor: AppColors.success,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+          _loadSchoolRoster();
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text('Error registering student: $e'),
+                backgroundColor: Colors.red),
+          );
+        }
+      }
     }
   }
 
@@ -143,7 +150,9 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
     final result = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Add student from roster', style: AppType.display(context, fontSize: 16.5, weight: FontWeight.w600)),
+        title: Text('Add student from organization list',
+            style: AppType.display(context,
+                fontSize: 16.5, weight: FontWeight.w600)),
         shape: RoundedRectangleBorder(borderRadius: AppRadius.xlR),
         content: Form(
           key: formKey,
@@ -159,14 +168,18 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
                       return _schoolRosterNames;
                     }
                     return _schoolRosterNames.where((String option) {
-                      return option.toLowerCase().contains(textEditingValue.text.toLowerCase());
+                      return option
+                          .toLowerCase()
+                          .contains(textEditingValue.text.toLowerCase());
                     });
                   },
                   onSelected: (String selection) {
                     selectedName = selection;
                   },
-                  fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
-                    if (selectedName.isNotEmpty && textEditingController.text.isEmpty) {
+                  fieldViewBuilder: (context, textEditingController, focusNode,
+                      onFieldSubmitted) {
+                    if (selectedName.isNotEmpty &&
+                        textEditingController.text.isEmpty) {
                       textEditingController.text = selectedName;
                     }
                     return TextFormField(
@@ -185,7 +198,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
                           return 'Please select a student';
                         }
                         if (!_schoolRosterNames.contains(value.trim())) {
-                          return 'Student not registered in school roster';
+                          return 'Student not approved in organization';
                         }
                         return null;
                       },
@@ -198,7 +211,8 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
                     Navigator.of(context).pop('CREATE_NEW_PROFILE');
                   },
                   icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
-                  label: Text('Not on list? Register new student', style: AppType.body(context, weight: FontWeight.w700)),
+                  label: Text('Not on list? Request new registration',
+                      style: AppType.body(context, weight: FontWeight.w700)),
                 ),
               ],
             ),
@@ -221,11 +235,14 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
     );
 
     if (result == 'CREATE_NEW_PROFILE') {
-      await _showCreateNewRosterStudentDialog();
-      await _showAddStudentDialog(); // Re-open roster selection
+      await _showCreateNewRosterStudentDialog(); // After this, the admin must approve. The dialog should not reopen automatically.
     } else if (result != null && result.isNotEmpty) {
-      await _studentRepo.addStudent(result, widget.course.id!);
+      final selectedStudent =
+          _unenrolledStudents.firstWhere((s) => s.name == result);
+      await _studentRepo.enrollStudentInCourse(
+          selectedStudent.id!, widget.course.id!);
       _loadStudents();
+      _loadSchoolRoster();
     }
   }
 
@@ -236,7 +253,9 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
     final updatedName = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Edit student details', style: AppType.display(context, fontSize: 16.5, weight: FontWeight.w600)),
+        title: Text('Edit student details',
+            style: AppType.display(context,
+                fontSize: 16.5, weight: FontWeight.w600)),
         shape: RoundedRectangleBorder(borderRadius: AppRadius.xlR),
         content: Form(
           key: formKey,
@@ -276,7 +295,9 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
       ),
     );
 
-    if (updatedName != null && updatedName.isNotEmpty && updatedName != student.name) {
+    if (updatedName != null &&
+        updatedName.isNotEmpty &&
+        updatedName != student.name) {
       try {
         final updatedStudent = Student(
           id: student.id,
@@ -287,7 +308,8 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
         await _studentRepo.updateStudent(updatedStudent);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Successfully updated student name to "$updatedName".'),
+            content:
+                Text('Successfully updated student name to "$updatedName".'),
             backgroundColor: Colors.green,
             behavior: SnackBarBehavior.floating,
           ),
@@ -309,7 +331,9 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Remove student', style: AppType.display(context, fontSize: 17, weight: FontWeight.w600)),
+        title: Text('Remove student',
+            style: AppType.display(context,
+                fontSize: 17, weight: FontWeight.w600)),
         shape: RoundedRectangleBorder(borderRadius: AppRadius.xlR),
         content: Text(
           'Are you sure you want to remove ${student.name} from this course?\n\n'
@@ -335,7 +359,8 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
         await _studentRepo.deleteStudent(student.id!);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Removed ${student.name} and their attendance history.'),
+            content:
+                Text('Removed ${student.name} and their attendance history.'),
             backgroundColor: AppColors.success,
             behavior: SnackBarBehavior.floating,
           ),
@@ -371,109 +396,125 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
           ),
         ),
         child: FutureBuilder<List<Student>>(
-        future: _studentsFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpace.xxxl),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Lottie.asset(
-                      'assets/lottie/form_reg.json',
-                      height: 180,
-                      width: 180,
-                      fit: BoxFit.contain,
-                      errorBuilder: (context, error, stackTrace) => Icon(
-                        Icons.people_outline_rounded,
-                        size: 64,
-                        color: AppColors.slate400,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpace.xl),
-                    Text(
-                      'No students added yet',
-                      style: AppType.display(context, fontSize: 16, weight: FontWeight.w600, color: AppColors.textPrimary(isDark)),
-                    ),
-                    const SizedBox(height: AppSpace.sm),
-                    Text(
-                      'Tap the button below to add a student to this course.',
-                      textAlign: TextAlign.center,
-                      style: AppType.body(context, color: AppColors.slate500),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-          final students = snapshot.data!;
-          return ListView.builder(
-            itemCount: students.length,
-            itemBuilder: (context, index) {
-              final student = students[index];
-              return Card(
-                margin: const EdgeInsets.symmetric(horizontal: AppSpace.lg, vertical: AppSpace.sm),
-                shape: RoundedRectangleBorder(
-                  borderRadius: AppRadius.lgR,
-                  side: BorderSide(color: AppColors.border(isDark), width: 1),
-                ),
+          future: _studentsFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (!snapshot.hasData || snapshot.data!.isEmpty) {
+              return Center(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: AppSpace.xs),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: AppSpace.lg, vertical: AppSpace.sm),
-                    leading: CircleAvatar(
-                      backgroundColor: theme.colorScheme.primary.withOpacity(0.08),
-                      child: Icon(Icons.person_rounded, color: theme.colorScheme.primary),
-                    ),
-                    title: Text(
-                      student.name,
-                      style: AppType.display(context, fontSize: 15.5, weight: FontWeight.w600, color: AppColors.textPrimary(isDark)),
-                    ),
-                    subtitle: Padding(
-                      padding: const EdgeInsets.only(top: 4.0),
-                      child: Text(
-                        'Code: ${student.deviceAppId}',
-                        style: AppType.data(context, color: AppColors.textSecondary(isDark), weight: FontWeight.w600, fontSize: 12.5),
+                  padding: const EdgeInsets.all(AppSpace.xxxl),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Lottie.asset(
+                        'assets/lottie/form_reg.json',
+                        height: 180,
+                        width: 180,
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) => Icon(
+                          Icons.people_outline_rounded,
+                          size: 64,
+                          color: AppColors.slate400,
+                        ),
                       ),
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.copy_rounded, size: 20),
-                          tooltip: 'Copy code',
-                          onPressed: () {
-                            Clipboard.setData(ClipboardData(text: student.deviceAppId));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Registration code copied!'),
-                                behavior: SnackBarBehavior.floating,
-                              ),
-                            );
-                          },
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.edit_rounded, size: 20, color: AppColors.sky),
-                          tooltip: 'Edit name',
-                          onPressed: () => _showEditStudentDialog(student),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline_rounded, size: 20, color: AppColors.dangerDark),
-                          tooltip: 'Remove student',
-                          onPressed: () => _confirmDeleteStudent(student),
-                        ),
-                      ],
-                    ),
+                      const SizedBox(height: AppSpace.xl),
+                      Text(
+                        'No students added yet',
+                        style: AppType.display(context,
+                            fontSize: 16,
+                            weight: FontWeight.w600,
+                            color: AppColors.textPrimary(isDark)),
+                      ),
+                      const SizedBox(height: AppSpace.sm),
+                      Text(
+                        'Tap the button below to add a student to this course.',
+                        textAlign: TextAlign.center,
+                        style: AppType.body(context, color: AppColors.slate500),
+                      ),
+                    ],
                   ),
                 ),
               );
-            },
-          );
-        },
+            }
+            final students = snapshot.data!;
+            return ListView.builder(
+              itemCount: students.length,
+              itemBuilder: (context, index) {
+                final student = students[index];
+                return Card(
+                  margin: const EdgeInsets.symmetric(
+                      horizontal: AppSpace.lg, vertical: AppSpace.sm),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: AppRadius.lgR,
+                    side: BorderSide(color: AppColors.border(isDark), width: 1),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: AppSpace.xs),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: AppSpace.lg, vertical: AppSpace.sm),
+                      leading: CircleAvatar(
+                        backgroundColor:
+                            theme.colorScheme.primary.withOpacity(0.08),
+                        child: Icon(Icons.person_rounded,
+                            color: theme.colorScheme.primary),
+                      ),
+                      title: Text(
+                        student.name,
+                        style: AppType.display(context,
+                            fontSize: 15.5,
+                            weight: FontWeight.w600,
+                            color: AppColors.textPrimary(isDark)),
+                      ),
+                      subtitle: Padding(
+                        padding: const EdgeInsets.only(top: 4.0),
+                        child: Text(
+                          'Code: ${student.deviceAppId}',
+                          style: AppType.data(context,
+                              color: AppColors.textSecondary(isDark),
+                              weight: FontWeight.w600,
+                              fontSize: 12.5),
+                        ),
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.copy_rounded, size: 20),
+                            tooltip: 'Copy code',
+                            onPressed: () {
+                              Clipboard.setData(
+                                  ClipboardData(text: student.deviceAppId));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Registration code copied!'),
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.edit_rounded,
+                                size: 20, color: AppColors.sky),
+                            tooltip: 'Edit name',
+                            onPressed: () => _showEditStudentDialog(student),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline_rounded,
+                                size: 20, color: AppColors.dangerDark),
+                            tooltip: 'Remove student',
+                            onPressed: () => _confirmDeleteStudent(student),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            );
+          },
         ),
       ),
       floatingActionButton: FloatingActionButton(

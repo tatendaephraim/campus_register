@@ -1,9 +1,17 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:geolocator/geolocator.dart';
 
 import 'course.dart';
 import 'timetable.dart';
 import 'timetable_repository.dart';
+import 'teacher_repository.dart';
+import 'timetable_constraints_repository.dart';
 import 'live_attendance_screen.dart';
+import 'venue_repository.dart';
+import 'venue.dart' as app_models;
+import 'location_service.dart';
 import 'ui/design_tokens.dart';
 
 class SetTimetableScreen extends StatefulWidget {
@@ -117,6 +125,74 @@ class _SetTimetableScreenState extends State<SetTimetableScreen> {
                           final startStr = '${startTime!.hour.toString().padLeft(2, '0')}:${startTime!.minute.toString().padLeft(2, '0')}';
                           final endStr = '${endTime!.hour.toString().padLeft(2, '0')}:${endTime!.minute.toString().padLeft(2, '0')}';
                           
+                          // Show loading spinner
+                          showDialog(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (context) => const Center(child: CircularProgressIndicator()),
+                          );
+
+                          // Fetch teacher and constraints
+                          final teacher = await TeacherRepository().getTeacherById(widget.course.teacherId);
+                          final constraints = teacher != null && teacher.organizationId != null
+                              ? await TimetableConstraintsRepository().getConstraints(teacher.organizationId!)
+                              : null;
+
+                          if (context.mounted) {
+                            Navigator.of(context).pop(); // dismiss loading spinner
+                          }
+
+                          if (constraints == null) {
+                            if (context.mounted) {
+                              showDialog(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  title: const Text('Constraints Undefined'),
+                                  content: const Text('Timetable constraints have not been configured by the Admin yet. You cannot create timetable slots until constraints are defined.'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.of(context).pop(),
+                                      child: const Text('OK'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+                            return; // Keep dialog open
+                          }
+
+                          // Enforce boundary check
+                          bool isTimeBefore(String t1, String t2) {
+                            final parts1 = t1.split(':');
+                            final parts2 = t2.split(':');
+                            final h1 = int.parse(parts1[0]);
+                            final m1 = int.parse(parts1[1]);
+                            final h2 = int.parse(parts2[0]);
+                            final m2 = int.parse(parts2[1]);
+                            if (h1 < h2) return true;
+                            if (h1 == h2 && m1 < m2) return true;
+                            return false;
+                          }
+
+                          if (isTimeBefore(startStr, constraints.startTime) || isTimeBefore(constraints.endTime, endStr)) {
+                            if (context.mounted) {
+                              showDialog(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  title: const Text('Invalid Time Bounds'),
+                                  content: Text('Failed to add slot: Time must fall within the Admin configured operation hours (${constraints.startTime} - ${constraints.endTime}).'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.of(context).pop(),
+                                      child: const Text('OK'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+                            return; // Keep dialog open
+                          }
+
                           if (widget.course.venueId != null) {
                             showDialog(
                               context: context,
@@ -273,15 +349,108 @@ class _SetTimetableScreenState extends State<SetTimetableScreen> {
                       ),
                     ),
                     onTap: isToday
-                        ? () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (context) => LiveAttendanceScreen(
-                                  course: widget.course,
-                                  slot: slot,
-                                ),
-                              ),
+                        ? () async {
+                            // Show loading spinner
+                            showDialog(
+                              context: context,
+                              barrierDismissible: false,
+                              builder: (context) => const Center(child: CircularProgressIndicator()),
                             );
+
+                            final teacher = await TeacherRepository().getTeacherById(widget.course.teacherId);
+                            
+                            if (context.mounted) {
+                              Navigator.of(context).pop(); // dismiss loading
+                            }
+
+                            if (teacher != null && teacher.role != 'admin') {
+                              // 1. Device ID check
+                              String? currentDeviceId;
+                              try {
+                                final deviceInfo = DeviceInfoPlugin();
+                                if (Platform.isAndroid) {
+                                  final androidInfo = await deviceInfo.androidInfo;
+                                  currentDeviceId = androidInfo.id;
+                                } else if (Platform.isIOS) {
+                                  final iosInfo = await deviceInfo.iosInfo;
+                                  currentDeviceId = iosInfo.identifierForVendor;
+                                }
+                              } catch (_) {}
+
+                              if (currentDeviceId != null && teacher.deviceAppId != null && teacher.deviceAppId != currentDeviceId) {
+                                if (context.mounted) {
+                                  showDialog(
+                                    context: context,
+                                    builder: (context) => AlertDialog(
+                                      title: const Text('Device Mismatch'),
+                                      content: const Text('You cannot start attendance from this device. Please use your registered mobile device.'),
+                                      actions: [
+                                        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK')),
+                                      ],
+                                    ),
+                                  );
+                                }
+                                return;
+                              }
+
+                              // 2. Geofence presence check
+                              if (widget.course.venueId != null) {
+                                final venue = await VenueRepository().getVenueById(widget.course.venueId!);
+                                if (venue != null && venue.hasPolygon) {
+                                  bool isInside = false;
+                                  try {
+                                    final locationService = LocationService();
+                                    final position = await locationService.getCurrentPositionWithPermissions();
+                                    isInside = locationService.isPointInPolygon(
+                                      position.latitude,
+                                      position.longitude,
+                                      venue.polygonCorners!,
+                                    );
+                                  } catch (e) {
+                                    if (context.mounted) {
+                                      showDialog(
+                                        context: context,
+                                        builder: (context) => AlertDialog(
+                                          title: const Text('Location Error'),
+                                          content: Text('Failed to verify location: $e'),
+                                          actions: [
+                                            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK')),
+                                          ],
+                                        ),
+                                      );
+                                    }
+                                    return;
+                                  }
+
+                                  if (!isInside) {
+                                    if (context.mounted) {
+                                      showDialog(
+                                        context: context,
+                                        builder: (context) => AlertDialog(
+                                          title: const Text('Geofence Verification Failed'),
+                                          content: Text('You must be physically present inside the venue "${venue.name}" to start class attendance.'),
+                                          actions: [
+                                            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK')),
+                                          ],
+                                        ),
+                                      );
+                                    }
+                                    return;
+                                  }
+                                }
+                              }
+                            }
+
+                            if (context.mounted) {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) => LiveAttendanceScreen(
+                                    course: widget.course,
+                                    slot: slot,
+                                  ),
+                                ),
+                              );
+                            }
                           }
                         : null,
                     trailing: Row(

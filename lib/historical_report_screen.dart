@@ -38,6 +38,7 @@ class _HistoricalReportScreenState extends State<HistoricalReportScreen> with Si
   // Filter state
   int? _selectedStudentId;
   DateTimeRange? _selectedDateRange;
+  String _selectedPeriod = 'all';
 
   // Pagination state
   int _currentPage = 0;
@@ -65,6 +66,31 @@ class _HistoricalReportScreenState extends State<HistoricalReportScreen> with Si
     });
   }
 
+  void _onPeriodChanged(String period) {
+    setState(() {
+      _selectedPeriod = period;
+      if (period == 'weekly') {
+        _selectedDateRange = DateTimeRange(
+          start: DateTime.now().subtract(const Duration(days: 7)),
+          end: DateTime.now(),
+        );
+      } else if (period == 'monthly') {
+        _selectedDateRange = DateTimeRange(
+          start: DateTime.now().subtract(const Duration(days: 30)),
+          end: DateTime.now(),
+        );
+      } else if (period == 'yearly') {
+        _selectedDateRange = DateTimeRange(
+          start: DateTime.now().subtract(const Duration(days: 365)),
+          end: DateTime.now(),
+        );
+      } else {
+        _selectedDateRange = null;
+      }
+      _applyFilters();
+    });
+  }
+
   void _applyFilters() {
     setState(() {
       _currentPage = 0; // Reset pagination on filter change
@@ -86,6 +112,7 @@ class _HistoricalReportScreenState extends State<HistoricalReportScreen> with Si
     setState(() {
       _selectedStudentId = null;
       _selectedDateRange = null;
+      _selectedPeriod = 'all';
       _applyFilters();
     });
   }
@@ -244,8 +271,24 @@ class _HistoricalReportScreenState extends State<HistoricalReportScreen> with Si
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpace.md, vertical: AppSpace.xs),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              Padding(
+                padding: const EdgeInsets.only(top: AppSpace.sm, bottom: AppSpace.xs),
+                child: SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment<String>(value: 'weekly', label: Text('Weekly', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700))),
+                    ButtonSegment<String>(value: 'monthly', label: Text('Monthly', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700))),
+                    ButtonSegment<String>(value: 'yearly', label: Text('Yearly', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700))),
+                    ButtonSegment<String>(value: 'all', label: Text('Duration', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700))),
+                  ],
+                  selected: {_selectedPeriod},
+                  onSelectionChanged: (newSelection) {
+                    _onPeriodChanged(newSelection.first);
+                  },
+                ),
+              ),
+              const Divider(height: 1),
               Row(
                 children: [
                   Expanded(

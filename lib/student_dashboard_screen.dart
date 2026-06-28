@@ -59,6 +59,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   final Map<int, TimetableSlot?> _activeSlotByProfileId = {};
   final Map<int, int> _visibleHistoryLimitByProfileId = {};
   final Map<int, bool> _hasCheckedInByProfileId = {};
+  final Map<int, AttendanceRecord?> _attendanceRecordsToday = {};
   final Map<int, bool> _isInsideVenueByProfileId = {};
   bool _isLoadingDashboard = true;
 
@@ -97,15 +98,17 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     // 1. Gather active slots first (very fast DB queries)
     bool hasAnyActiveSlot = false;
     final Map<int, TimetableSlot?> slots = {};
-    final Map<int, bool> checkedIn = {};
+    final Map<int, AttendanceRecord?> recordsToday = {};
 
     for (var profile in _studentProfiles) {
       final profileId = profile.id!;
-      final TimetableSlot? potentialSlot = await _checkInService.getActiveSlot(profile.courseId);
+      final TimetableSlot? potentialSlot = profile.courseId != null
+          ? await _checkInService.getActiveSlot(profile.courseId!)
+          : null;
       slots[profileId] = potentialSlot;
       if (potentialSlot != null) {
         hasAnyActiveSlot = true;
-        checkedIn[profileId] = await _checkInRepo.hasCheckedInToday(profileId, potentialSlot.id!);
+        recordsToday[profileId] = await _checkInRepo.getAttendanceRecordToday(profileId, potentialSlot.id!);
       }
     }
 
@@ -127,7 +130,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     for (var profile in _studentProfiles) {
       final profileId = profile.id!;
       final potentialSlot = slots[profileId];
-      final alreadyCheckedIn = checkedIn[profileId] ?? false;
+      final recordToday = recordsToday[profileId];
 
       bool isInsideVenue = false;
       if (potentialSlot != null && position != null) {
@@ -147,7 +150,8 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
       if (mounted) {
         setState(() {
           _activeSlotByProfileId[profileId] = potentialSlot;
-          _hasCheckedInByProfileId[profileId] = alreadyCheckedIn;
+          _attendanceRecordsToday[profileId] = recordToday;
+          _hasCheckedInByProfileId[profileId] = recordToday != null;
           _isInsideVenueByProfileId[profileId] = isInsideVenue;
         });
       }
@@ -162,30 +166,51 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     }
 
     try {
-      final profiles = await StudentRepository().getStudentsByDeviceId(_currentStudent.deviceAppId);
-      _studentProfiles = profiles;
-      
+      final rawProfiles = await StudentRepository().getStudentsByDeviceId(_currentStudent.deviceAppId);
+      final List<Student> profiles = [];
+
       _attendanceByProfileId.clear();
       _timetableByProfileId.clear();
       _courseByProfileId.clear();
       _activeSlotByProfileId.clear();
 
-      // Load all profiles in parallel to speed up database queries
-      await Future.wait(_studentProfiles.map((profile) async {
+      // Load all profiles and resolve their course assignments in parallel
+      await Future.wait(rawProfiles.map((profile) async {
         final profileId = profile.id!;
+        final courseId = await StudentRepository().getEnrolledCourseId(profileId);
         
-        // Fetch course, attendance, timetable, and active slot concurrently
-        final results = await Future.wait([
-          _courseRepo.getCourseById(profile.courseId),
-          _attendanceRepo.getAttendanceForStudent(profileId),
-          TimetableRepository().getTimetableForCourse(profile.courseId),
-          _checkInService.getActiveSlot(profile.courseId),
-        ]);
+        final resolvedStudent = Student(
+          id: profile.id,
+          courseId: courseId,
+          organizationId: profile.organizationId,
+          name: profile.name,
+          email: profile.email,
+          deviceAppId: profile.deviceAppId,
+          isApproved: profile.isApproved,
+        );
+        profiles.add(resolvedStudent);
 
-        final course = results[0] as Course?;
-        final attendance = results[1] as List<StudentAttendanceView>;
-        final timetable = results[2] as List<TimetableSlot>;
-        final potentialSlot = results[3] as TimetableSlot?;
+        // Fetch course, attendance, timetable, and active slot
+        Course? course;
+        List<StudentAttendanceView> attendance = [];
+        List<TimetableSlot> timetable = [];
+        TimetableSlot? potentialSlot;
+
+        if (courseId != null) {
+          final results = await Future.wait([
+            _courseRepo.getCourseById(courseId),
+            _attendanceRepo.getAttendanceForStudent(profileId),
+            TimetableRepository().getTimetableForCourse(courseId),
+            _checkInService.getActiveSlot(courseId),
+          ]);
+
+          course = results[0] as Course?;
+          attendance = results[1] as List<StudentAttendanceView>;
+          timetable = results[2] as List<TimetableSlot>;
+          potentialSlot = results[3] as TimetableSlot?;
+        } else {
+          attendance = await _attendanceRepo.getAttendanceForStudent(profileId);
+        }
 
         if (course != null) {
           _courseByProfileId[profileId] = course;
@@ -195,18 +220,26 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
         _timetableByProfileId[profileId] = timetable;
         _activeSlotByProfileId[profileId] = potentialSlot;
         
-        bool alreadyCheckedIn = false;
+        AttendanceRecord? recordToday;
         if (potentialSlot != null) {
-          alreadyCheckedIn = await _checkInRepo.hasCheckedInToday(profileId, potentialSlot.id!);
+          recordToday = await _checkInRepo.getAttendanceRecordToday(profileId, potentialSlot.id!);
         }
-        _hasCheckedInByProfileId[profileId] = alreadyCheckedIn;
+        _attendanceRecordsToday[profileId] = recordToday;
+        _hasCheckedInByProfileId[profileId] = recordToday != null;
         _isInsideVenueByProfileId[profileId] = false;
         
         _visibleHistoryLimitByProfileId.putIfAbsent(profileId, () => 3);
 
-        // Run backfill absent records in the background (no need to await it to show UI!)
-        _checkInRepo.backfillAbsentRecords(profile.courseId).catchError((_) => 0);
+        if (courseId != null) {
+          _checkInRepo.backfillAbsentRecords(courseId).catchError((_) => 0);
+        }
       }));
+      
+      if (mounted) {
+        setState(() {
+          _studentProfiles = profiles;
+        });
+      }
       
       // Run location check asynchronously
       _checkAllActiveSlots();
@@ -225,8 +258,10 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     setState(() => _isCheckingIn = true);
 
     try {
-      // --- 1. Class Time Validation ---
-      final currentActiveSlot = await _checkInService.getActiveSlot(student.courseId);
+      if (student.courseId == null) {
+        throw 'Student is not enrolled in a course.';
+      }
+      final currentActiveSlot = await _checkInService.getActiveSlot(student.courseId!);
       if (currentActiveSlot == null || currentActiveSlot.id != activeSlot.id) {
         throw 'Class is not currently active. Sign-in is restricted to the specific times of that class.';
       }
@@ -334,6 +369,110 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
       );
     } finally {
       setState(() => _isCheckingIn = false);
+    }
+  }
+
+  bool _isCheckOutWindow(String endTimeStr) {
+    try {
+      final now = DateTime.now();
+      final parts = endTimeStr.split(':');
+      final endHour = int.parse(parts[0]);
+      final endMinute = int.parse(parts[1]);
+      
+      final classEnd = DateTime(now.year, now.month, now.day, endHour, endMinute);
+      final windowStart = classEnd.subtract(const Duration(minutes: 5));
+      final windowEnd = classEnd.add(const Duration(minutes: 5));
+      
+      return now.isAfter(windowStart) && now.isBefore(windowEnd);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  bool _isBeforeCheckOutWindow(String endTimeStr) {
+    try {
+      final now = DateTime.now();
+      final parts = endTimeStr.split(':');
+      final endHour = int.parse(parts[0]);
+      final endMinute = int.parse(parts[1]);
+      
+      final classEnd = DateTime(now.year, now.month, now.day, endHour, endMinute);
+      final windowStart = classEnd.subtract(const Duration(minutes: 5));
+      
+      return now.isBefore(windowStart);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<void> _performCheckOut(Student student, TimetableSlot activeSlot, AttendanceRecord record) async {
+    setState(() => _isCheckingIn = true);
+
+    try {
+      if (student.courseId == null) {
+        throw 'Student is not enrolled in a course.';
+      }
+      
+      if (!_isCheckOutWindow(activeSlot.endTime)) {
+        throw 'Check-out is locked. You can only check out from 5 minutes before to 5 minutes after class ends.';
+      }
+
+      final position = await _locationService.getCurrentPositionWithPermissions();
+
+      final course = _courseByProfileId[student.id!];
+      if (course?.venueId != null) {
+        final venue = await _venueRepo.getVenueById(course!.venueId!);
+        if (venue != null) {
+          if (!venue.hasPolygon) {
+            throw 'Class geofence is invalid. Must have at least 3 corners defined.';
+          }
+
+          final isInsidePolygon = _locationService.isPointInPolygon(
+            position.latitude,
+            position.longitude,
+            venue.polygonCorners!,
+          );
+          if (!isInsidePolygon) {
+            throw 'You are not inside the classroom. Check-out is restricted to the 3D class boundary.';
+          }
+        }
+      }
+
+      final isAuthenticated = await _biometricService.authenticate();
+      if (!isAuthenticated) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text(_biometricService.lastError ?? 'Authentication failed.'),
+                backgroundColor: Colors.red),
+          );
+        }
+        setState(() => _isCheckingIn = false);
+        return;
+      }
+
+      final now = DateTime.now();
+      await _checkInRepo.checkoutAttendanceRecord(record.id!, now.toIso8601String());
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Check-out successful!'),
+              backgroundColor: Colors.green),
+        );
+      }
+
+      _loadAllDashboardData();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Check-out failed: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isCheckingIn = false);
+      }
     }
   }
 
@@ -602,7 +741,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Lottie.asset(
-                          'assets/lottie/register.json',
+                          'assets/lottie/classroom.json',
                           height: 180,
                           width: 180,
                           fit: BoxFit.contain,
@@ -675,13 +814,16 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   ) {
     final course = _courseByProfileId[student.id!];
     if (course == null) {
-      return const Card(
-        margin: EdgeInsets.symmetric(horizontal: AppSpace.lg, vertical: AppSpace.sm),
-        child: Padding(
-          padding: EdgeInsets.all(AppSpace.xl),
-          child: Center(child: CircularProgressIndicator()),
-        ),
-      );
+      if (_isLoadingDashboard) {
+        return const Card(
+          margin: EdgeInsets.symmetric(horizontal: AppSpace.lg, vertical: AppSpace.sm),
+          child: Padding(
+            padding: EdgeInsets.all(AppSpace.xl),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        );
+      }
+      return const SizedBox.shrink();
     }
 
     final attendance = _attendanceByProfileId[student.id!] ?? [];
@@ -1003,25 +1145,99 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                   ],
                 ),
                 if (hasCheckedIn)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: AppColors.success.withOpacity(0.12),
-                      borderRadius: AppRadius.smR,
-                      border: Border.all(color: AppColors.success.withOpacity(0.3), width: 1.5),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.check_circle_rounded, size: 16, color: AppColors.success),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Checked in',
-                          style: AppType.body(context, color: AppColors.success, weight: FontWeight.w700, fontSize: 13),
-                        ),
-                      ],
-                    ),
-                  )
+                  Builder(
+                    builder: (context) {
+                      final record = _attendanceRecordsToday[student.id!];
+                      if (record == null) {
+                        return const SizedBox.shrink();
+                      }
+                     if (record.checkedOutAt != null) {
+                       return Container(
+                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                         decoration: BoxDecoration(
+                           color: Colors.blue.withOpacity(0.12),
+                           borderRadius: AppRadius.smR,
+                           border: Border.all(color: Colors.blue.withOpacity(0.3), width: 1.5),
+                         ),
+                         child: Row(
+                           mainAxisSize: MainAxisSize.min,
+                           children: [
+                             const Icon(Icons.check_circle_rounded, size: 16, color: Colors.blue),
+                             const SizedBox(width: 8),
+                             Text(
+                               'Checked out',
+                               style: AppType.body(context, color: Colors.blue, weight: FontWeight.w700, fontSize: 13),
+                             ),
+                           ],
+                         ),
+                       );
+                     }
+                     if (_isCheckOutWindow(activeSlot.endTime)) {
+                       return ElevatedButton.icon(
+                         onPressed: () => _performCheckOut(student, activeSlot, record),
+                         icon: const Icon(Icons.logout_rounded, size: 18),
+                         label: const Text('Scan & check out'),
+                         style: ElevatedButton.styleFrom(
+                           backgroundColor: Colors.teal,
+                           foregroundColor: Colors.white,
+                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                           shape: RoundedRectangleBorder(borderRadius: AppRadius.smR),
+                           elevation: 2,
+                         ),
+                       );
+                     }
+                     if (_isBeforeCheckOutWindow(activeSlot.endTime)) {
+                       return Container(
+                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                         decoration: BoxDecoration(
+                           color: AppColors.success.withOpacity(0.1),
+                           borderRadius: AppRadius.smR,
+                         ),
+                         child: Column(
+                           crossAxisAlignment: CrossAxisAlignment.end,
+                           children: [
+                             Row(
+                               mainAxisSize: MainAxisSize.min,
+                               children: [
+                                 const Icon(Icons.lock_clock_rounded, size: 14, color: AppColors.success),
+                                 const SizedBox(width: 6),
+                                 Text(
+                                   'Checked In',
+                                   style: AppType.body(context, color: AppColors.success, weight: FontWeight.w700, fontSize: 12),
+                                 ),
+                               ],
+                             ),
+                             const SizedBox(height: 2),
+                             const Text(
+                               'Check-out opens 5m before end',
+                               style: TextStyle(fontSize: 9, color: Colors.grey, fontWeight: FontWeight.w600),
+                             ),
+                           ],
+                         ),
+                       );
+                     }
+                     // Missed checkout window
+                     return Container(
+                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                       decoration: BoxDecoration(
+                         color: Colors.orange.withOpacity(0.12),
+                         borderRadius: AppRadius.smR,
+                         border: Border.all(color: Colors.orange.withOpacity(0.3), width: 1.5),
+                       ),
+                       child: Row(
+                         mainAxisSize: MainAxisSize.min,
+                         children: [
+                           const Icon(Icons.warning_amber_rounded, size: 16, color: Colors.orange),
+                           const SizedBox(width: 8),
+                           Text(
+                             'Check-out locked',
+                             style: AppType.body(context, color: Colors.orange, weight: FontWeight.w700, fontSize: 13),
+                           ),
+                         ],
+                       ),
+                     );
+                   },
+                 )
                 else
                   _isCheckingIn
                       ? SizedBox(

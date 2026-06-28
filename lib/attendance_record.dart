@@ -10,6 +10,7 @@ class AttendanceRecord {
   final double altitude;
   final double latitude;
   final double longitude;
+  final DateTime? checkedOutAt;
 
   AttendanceRecord({
     this.id,
@@ -22,6 +23,7 @@ class AttendanceRecord {
     required this.altitude,
     required this.latitude,
     required this.longitude,
+    this.checkedOutAt,
   });
 
   /// Creates an [AttendanceRecord] instance from a database map.
@@ -37,6 +39,7 @@ class AttendanceRecord {
       altitude: map['altitude'] as double,
       latitude: map['latitude'] as double,
       longitude: map['longitude'] as double,
+      checkedOutAt: map['checked_out_at'] != null ? DateTime.parse(map['checked_out_at'] as String) : null,
     );
   }
 
@@ -53,6 +56,7 @@ class AttendanceRecord {
       'altitude': altitude,
       'latitude': latitude,
       'longitude': longitude,
+      'checked_out_at': checkedOutAt?.toIso8601String(),
     };
   }
 }

@@ -258,7 +258,7 @@ class _CreateCourseScreenState extends State<CreateCourseScreen> {
             contentPadding: EdgeInsets.zero,
             leading: Icon(Icons.location_off_rounded, color: AppColors.slate400),
             title: Text('No venues created', style: AppType.body(context, weight: FontWeight.w600, color: AppColors.textPrimary(isDark))),
-            subtitle: Text('Please create a classroom venue first.', style: AppType.body(context, fontSize: 12.5, color: AppColors.textSecondary(isDark))),
+            subtitle: Text('Please contact your administrator to set up venues first.', style: AppType.body(context, fontSize: 12.5, color: AppColors.textSecondary(isDark))),
           );
         }
         final venues = snapshot.data!;

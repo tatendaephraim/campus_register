@@ -4,12 +4,21 @@ import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:lottie/lottie.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'location_service.dart';
+import 'services/biometric_service.dart';
 
 import 'course.dart';
 import 'teacher.dart';
+import 'clock_log.dart';
+import 'timetable_constraints.dart';
 import 'course_repository.dart';
 import 'student_repository.dart';
 import 'timetable_repository.dart';
+import 'timetable_constraints_repository.dart';
+import 'clock_log_repository.dart';
+import 'teacher_repository.dart';
 import 'create_course_screen.dart';
 import 'course_details_screen.dart';
 import 'role_selection_screen.dart';
@@ -35,12 +44,43 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
   final _courseRepo = CourseRepository();
   final _studentRepo = StudentRepository();
   final _timetableRepo = TimetableRepository();
+  final _clockLogRepo = ClockLogRepository();
+  final _teacherRepo = TeacherRepository();
   late Future<List<Course>> _coursesFuture;
+  Teacher? _currentTeacher;
+
+  ClockLog? _activeOfficeLog;
+  TimetableConstraints? _constraints;
 
   @override
   void initState() {
     super.initState();
+    _currentTeacher = widget.teacher;
     _loadCourses();
+    _loadClockLogs();
+  }
+
+  void _loadClockLogs() async {
+    try {
+      final refreshedTeacher = await _teacherRepo.getTeacherByEmail(widget.teacher.email);
+      if (mounted) {
+        setState(() {
+          _currentTeacher = refreshedTeacher;
+        });
+      }
+    } catch (_) {}
+
+    final active = await _clockLogRepo.getActiveLog(teacherId: widget.teacher.id, type: 'office');
+    TimetableConstraints? constraints;
+    if (widget.teacher.organizationId != null) {
+      constraints = await TimetableConstraintsRepository().getConstraints(widget.teacher.organizationId!);
+    }
+    if (mounted) {
+      setState(() {
+        _activeOfficeLog = active;
+        _constraints = constraints;
+      });
+    }
   }
 
   void _loadCourses() {
@@ -201,14 +241,12 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
                             context,
                             theme,
                             isDark,
-                            title: 'Classrooms manager',
-                            subtitle: '3D volumetric geofences',
-                            icon: Icons.spatial_tracking_rounded,
+                            title: 'Create new course',
+                            subtitle: 'Setup curriculum & schedules',
+                            icon: Icons.add_box_rounded,
                             color: AppColors.success,
                             onTap: () {
-                               Navigator.of(context).push(
-                                MaterialPageRoute(builder: (context) => const ManageVenuesScreen()),
-                               );
+                              _navigateToCreateCourse();
                             },
                           ),
                         ),
@@ -245,6 +283,8 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
                     ),
                   ),
 
+                  _buildOfficeClockingCard(context, theme, isDark),
+
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: AppSpace.xl, vertical: AppSpace.lg),
                     child: Text(
@@ -278,7 +318,7 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Lottie.asset(
-                              'assets/lottie/register.json',
+                              'assets/lottie/classroom.json',
                               height: 180,
                               width: 180,
                               fit: BoxFit.contain,
@@ -656,21 +696,6 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
           ),
           _buildDrawerItem(
             context,
-            icon: Icons.meeting_room_rounded,
-            title: 'Classroom manager',
-            theme: theme,
-            isDark: isDark,
-            isActive: false,
-            indent: 16.0,
-            onTap: () {
-              Navigator.of(context).pop();
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (context) => const ManageVenuesScreen()),
-              );
-            },
-          ),
-          _buildDrawerItem(
-            context,
             icon: Icons.create_new_folder_rounded,
             title: 'Create course',
             theme: theme,
@@ -680,21 +705,6 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
             onTap: () {
               Navigator.of(context).pop();
               _navigateToCreateCourse();
-            },
-          ),
-          _buildDrawerItem(
-            context,
-            icon: Icons.add_location_alt_rounded,
-            title: 'Add classroom',
-            theme: theme,
-            isDark: isDark,
-            isActive: false,
-            indent: 16.0,
-            onTap: () {
-              Navigator.of(context).pop();
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (context) => const VenueEditorScreen()),
-              );
             },
           ),
           const Spacer(),
@@ -848,6 +858,272 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
                 ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOfficeClockingCard(BuildContext context, ThemeData theme, bool isDark) {
+    final hasActiveLog = _activeOfficeLog != null;
+    final clockInTimeStr = hasActiveLog
+        ? DateFormat.jm().format(DateTime.parse(_activeOfficeLog!.clockIn))
+        : '';
+    final officeVenueId = _currentTeacher?.officeVenueId;
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: AppSpace.xl, vertical: AppSpace.sm),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpace.xl),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  hasActiveLog ? Icons.work_rounded : Icons.work_outline_rounded,
+                  color: hasActiveLog ? AppColors.success : AppColors.slate500,
+                  size: 24,
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Daily Office Attendance',
+                  style: AppType.display(context, fontSize: 16, weight: FontWeight.w700),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpace.sm),
+            Text(
+              hasActiveLog
+                  ? 'Clocked in to office since $clockInTimeStr.'
+                  : 'You have not checked in to the office today.',
+              style: TextStyle(color: AppColors.textSecondary(isDark), fontSize: 13.5),
+            ),
+            if (!hasActiveLog) ...[
+              const SizedBox(height: 6),
+              FutureBuilder<app_models.Venue?>(
+                future: officeVenueId != null
+                    ? VenueRepository().getVenueById(officeVenueId)
+                    : Future.value(null),
+                builder: (context, snapshot) {
+                  final venueName = snapshot.data?.name;
+                  return Text(
+                    venueName != null
+                        ? 'Allocated Office: $venueName'
+                        : 'Office Venue: None allocated. (Clock in disabled)',
+                    style: AppType.body(
+                      context,
+                      fontSize: 12,
+                      color: venueName != null ? AppColors.indigo : Colors.red,
+                      weight: FontWeight.w600,
+                    ),
+                  );
+                },
+              ),
+            ],
+            const SizedBox(height: AppSpace.md),
+            SizedBox(
+              width: double.maxFinite,
+              child: ElevatedButton.icon(
+                icon: Icon(hasActiveLog ? Icons.logout_rounded : Icons.login_rounded),
+                label: Text(hasActiveLog ? 'Clock Out of Office' : 'Clock In to Office'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: hasActiveLog ? Colors.red[600] : (officeVenueId == null ? Colors.grey : theme.colorScheme.primary),
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: officeVenueId == null && !hasActiveLog
+                    ? null
+                    : () async {
+                        if (hasActiveLog) {
+                          bool isEarly = false;
+                          String? shiftEndTime = _constraints?.endTime;
+                          if (shiftEndTime != null) {
+                            final now = TimeOfDay.now();
+                            final parts = shiftEndTime.split(':');
+                            final limitH = int.parse(parts[0]);
+                            final limitM = int.parse(parts[1]);
+                            if (now.hour < limitH || (now.hour == limitH && now.minute < limitM)) {
+                              isEarly = true;
+                            }
+                          }
+
+                          String? reason;
+                          if (isEarly) {
+                            final reasonController = TextEditingController();
+                            final formKey = GlobalKey<FormState>();
+                            reason = await showDialog<String>(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                title: const Text('Early Leave Waiver Request'),
+                                content: Form(
+                                  key: formKey,
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Text('You are clocking out before the scheduled shift end time. Please provide a reason to request a waiver from the Admin.'),
+                                      const SizedBox(height: 12),
+                                      TextFormField(
+                                        controller: reasonController,
+                                        decoration: const InputDecoration(labelText: 'Reason (e.g. medical appointment)'),
+                                        validator: (v) => v == null || v.isEmpty ? 'Please enter a reason' : null,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                actions: [
+                                  TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+                                  ElevatedButton(
+                                    onPressed: () {
+                                      if (formKey.currentState!.validate()) {
+                                        Navigator.of(context).pop(reasonController.text.trim());
+                                      }
+                                    },
+                                    child: const Text('Submit'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (reason == null) return;
+                          }
+
+                          await _clockLogRepo.clockOut(_activeOfficeLog!.id!, earlyLeaveReason: reason);
+                        } else {
+                          // Show loading spinner
+                          showDialog(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (context) => const Center(child: CircularProgressIndicator()),
+                          );
+
+                          // 1. Device ID verification
+                          if (widget.teacher.role != 'admin') {
+                            String? currentDeviceId;
+                            try {
+                              final deviceInfo = DeviceInfoPlugin();
+                              if (Platform.isAndroid) {
+                                final androidInfo = await deviceInfo.androidInfo;
+                                currentDeviceId = androidInfo.id;
+                              } else if (Platform.isIOS) {
+                                final iosInfo = await deviceInfo.iosInfo;
+                                currentDeviceId = iosInfo.identifierForVendor;
+                              }
+                            } catch (_) {}
+
+                            if (currentDeviceId != null && widget.teacher.deviceAppId != null && widget.teacher.deviceAppId != currentDeviceId) {
+                              if (context.mounted) {
+                                Navigator.of(context).pop(); // dismiss loading
+                                showDialog(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: const Text('Device Mismatch'),
+                                    content: const Text('You cannot clock in from this device. Please use your registered mobile device.'),
+                                    actions: [
+                                      TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK')),
+                                    ],
+                                  ),
+                                );
+                              }
+                              return;
+                            }
+                          }
+
+                          // 2. Geofence presence check for the allocated office venue
+                          bool insideAllocatedOffice = false;
+                          app_models.Venue? allocatedVenue;
+                          try {
+                            final locationService = LocationService();
+                            final position = await locationService.getCurrentPositionWithPermissions();
+                            if (officeVenueId != null) {
+                              allocatedVenue = await VenueRepository().getVenueById(officeVenueId);
+                              if (allocatedVenue != null) {
+                                if (allocatedVenue.hasPolygon) {
+                                  insideAllocatedOffice = locationService.isPointInPolygon(
+                                    position.latitude,
+                                    position.longitude,
+                                    allocatedVenue.polygonCorners!,
+                                  );
+                                } else {
+                                  // fallback to radius check if no polygon corners
+                                  final distance = Geolocator.distanceBetween(
+                                    position.latitude,
+                                    position.longitude,
+                                    allocatedVenue.latitude,
+                                    allocatedVenue.longitude,
+                                  );
+                                  insideAllocatedOffice = distance <= allocatedVenue.radius;
+                                }
+                              }
+                            }
+                          } catch (e) {
+                            if (context.mounted) {
+                              Navigator.of(context).pop(); // dismiss loading
+                              showDialog(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  title: const Text('Location Error'),
+                                  content: Text('Failed to verify location: $e'),
+                                  actions: [
+                                    TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK')),
+                                  ],
+                                ),
+                              );
+                            }
+                            return;
+                          }
+
+                          if (context.mounted) {
+                            Navigator.of(context).pop(); // dismiss loading
+                          }
+
+                          if (!insideAllocatedOffice) {
+                            if (context.mounted) {
+                              showDialog(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  title: const Text('Geofence Verification Failed'),
+                                  content: Text(
+                                    allocatedVenue != null
+                                        ? 'You must be physically present inside your allocated office venue ("${allocatedVenue.name}") to clock in.'
+                                        : 'No allocated office venue found. Please contact your Admin.',
+                                  ),
+                                  actions: [
+                                    TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK')),
+                                  ],
+                                ),
+                              );
+                            }
+                            return;
+                          }
+
+                          // 3. Biometric fingerprint check
+                          final biometricService = BiometricService();
+                          final isAuthenticated = await biometricService.authenticate();
+                          if (!isAuthenticated) {
+                            if (context.mounted) {
+                              showDialog(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  title: const Text('Authentication Failed'),
+                                  content: Text(biometricService.lastError ?? 'Biometric verification is required to clock in.'),
+                                  actions: [
+                                    TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK')),
+                                  ],
+                                ),
+                              );
+                            }
+                            return;
+                          }
+
+                          await _clockLogRepo.clockIn(
+                            teacherId: widget.teacher.id,
+                            venueId: officeVenueId,
+                            type: 'office',
+                          );
+                        }
+                        _loadClockLogs();
+                      },
+              ),
+            ),
+          ],
         ),
       ),
     );

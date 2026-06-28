@@ -79,4 +79,69 @@ class AttendanceRepository {
     return List.generate(
         maps.length, (i) => TeacherReportView.fromMap(maps[i]));
   }
+
+  /// Fetches aggregated attendance statistics for all students in an organization.
+  Future<Map<String, int>> getOrganizationAttendanceStats(int orgId, {String period = 'all'}) async {
+    final db = await dbHelper.database;
+    String dateFilter = '';
+    if (period == 'weekly') {
+      dateFilter = "AND ar.timestamp >= datetime('now', '-7 days')";
+    } else if (period == 'monthly') {
+      dateFilter = "AND ar.timestamp >= datetime('now', '-30 days')";
+    } else if (period == 'yearly') {
+      dateFilter = "AND ar.timestamp >= datetime('now', '-365 days')";
+    }
+
+    final List<Map<String, dynamic>> results = await db.rawQuery('''
+      SELECT ar.status, COUNT(*) as count 
+      FROM attendance_records ar
+      INNER JOIN students s ON ar.student_id = s.id
+      WHERE s.organization_id = ? $dateFilter
+      GROUP BY ar.status
+    ''', [orgId]);
+
+    final Map<String, int> stats = {'PRESENT': 0, 'LATE': 0, 'ABSENT': 0};
+    for (var row in results) {
+      final status = (row['status'] as String).toUpperCase();
+      final count = row['count'] as int;
+      stats[status] = count;
+    }
+    return stats;
+  }
+
+  /// Fetches the attendance trend (compliance rate by day) for all students in an organization.
+  Future<Map<String, double>> getOrganizationAttendanceTrend(int orgId, {String period = 'all'}) async {
+    final db = await dbHelper.database;
+    String dateFilter = '';
+    int limitCount = 7;
+    if (period == 'weekly') {
+      dateFilter = "AND ar.timestamp >= datetime('now', '-7 days')";
+      limitCount = 7;
+    } else if (period == 'monthly') {
+      dateFilter = "AND ar.timestamp >= datetime('now', '-30 days')";
+      limitCount = 30;
+    } else if (period == 'yearly') {
+      dateFilter = "AND ar.timestamp >= datetime('now', '-365 days')";
+      limitCount = 12; // Group by month/week later if needed, but last 12 active days is simple and clean
+    }
+
+    final List<Map<String, dynamic>> results = await db.rawQuery('''
+      SELECT DATE(ar.timestamp) as date_day,
+             SUM(CASE WHEN ar.status IN ('PRESENT', 'LATE') THEN 1 ELSE 0 END) * 1.0 / COUNT(*) as compliance_rate
+      FROM attendance_records ar
+      INNER JOIN students s ON ar.student_id = s.id
+      WHERE s.organization_id = ? $dateFilter
+      GROUP BY date_day
+      ORDER BY date_day ASC
+      LIMIT $limitCount
+    ''', [orgId]);
+
+    final Map<String, double> trend = {};
+    for (var row in results) {
+      final date = row['date_day'] as String;
+      final rate = (row['compliance_rate'] as num).toDouble();
+      trend[date] = rate;
+    }
+    return trend;
+  }
 }

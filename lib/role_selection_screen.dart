@@ -116,8 +116,9 @@ class RoleSelectionScreen extends StatelessWidget {
 
                 _buildRoleCard(
                   context,
-                  title: "I'm a Teacher",
-                  subtitle: 'Create courses, set timetables, manage venues, and sync reports',
+                  title: "I'm an Employee/Educator/Student",
+                  subtitle: 'If you have an account sign in here (Employee/Educator), but students sign in below'
+                      ',unless you do not have an account',
                   icon: Icons.school_rounded,
                   color: theme.colorScheme.primary,
                   onTap: () {

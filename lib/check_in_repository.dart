@@ -412,4 +412,80 @@ class CheckInRepository {
       print("Error in backfillAbsentRecords: $e\n$stack");
     }
   }
+
+  /// Fetches the exact attendance record for a student for today's slot.
+  Future<AttendanceRecord?> getAttendanceRecordToday(int studentId, int timetableSlotId) async {
+    final now = DateTime.now();
+    final startOfDay = DateTime(now.year, now.month, now.day);
+    final endOfDay = startOfDay.add(const Duration(days: 1));
+
+    // Try Supabase first
+    try {
+      final response = await _supabase
+          .from('attendance_records')
+          .select()
+          .eq('student_id', studentId)
+          .eq('timetable_slot_id', timetableSlotId)
+          .gte('timestamp', startOfDay.toIso8601String())
+          .lt('timestamp', endOfDay.toIso8601String());
+      
+      if (response.isNotEmpty) {
+        final record = AttendanceRecord.fromMap(response.first as Map<String, dynamic>);
+        // Cache locally
+        final db = await dbHelper.database;
+        await db.insert(
+          'attendance_records',
+          record.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+        return record;
+      }
+    } catch (e) {
+      print('⚠️ Supabase getAttendanceRecordToday error: $e');
+    }
+
+    // SQLite fallback
+    final db = await dbHelper.database;
+    final result = await db.query(
+      'attendance_records',
+      where:
+          'student_id = ? AND timetable_slot_id = ? AND timestamp >= ? AND timestamp < ?',
+      whereArgs: [
+        studentId,
+        timetableSlotId,
+        startOfDay.toIso8601String(),
+        endOfDay.toIso8601String()
+      ],
+      limit: 1,
+    );
+
+    if (result.isNotEmpty) {
+      return AttendanceRecord.fromMap(result.first);
+    }
+    return null;
+  }
+
+  /// Updates an existing attendance record to set checked_out_at.
+  Future<void> checkoutAttendanceRecord(int recordId, String checkoutTime) async {
+    final db = await dbHelper.database;
+
+    // 1. Try syncing to Supabase if online
+    try {
+      await _supabase
+          .from('attendance_records')
+          .update({'checked_out_at': checkoutTime})
+          .eq('id', recordId);
+      print('✅ Synced check-out to Supabase: ID=$recordId');
+    } catch (e) {
+      print('⚠️ Supabase check-out update error: $e');
+    }
+
+    // 2. Save locally
+    await db.update(
+      'attendance_records',
+      {'checked_out_at': checkoutTime},
+      where: 'id = ?',
+      whereArgs: [recordId],
+    );
+  }
 }
