@@ -57,9 +57,10 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
 
   Future<void> _showCreateNewRosterStudentDialog() async {
     final nameController = TextEditingController();
+    final emailController = TextEditingController();
     final formKey = GlobalKey<FormState>();
 
-    final newName = await showDialog<String>(
+    final newStudentDetails = await showDialog<Map<String, String>>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Register new student in organization',
@@ -90,6 +91,21 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
                   return null;
                 },
               ),
+              const SizedBox(height: AppSpace.md),
+              TextFormField(
+                controller: emailController,
+                decoration: const InputDecoration(
+                  labelText: 'Student email address',
+                  prefixIcon: Icon(Icons.email_rounded),
+                ),
+                keyboardType: TextInputType.emailAddress,
+                validator: (value) {
+                  if (value == null || !value.contains('@')) {
+                    return 'Please enter a valid email';
+                  }
+                  return null;
+                },
+              ),
             ],
           ),
         ),
@@ -101,7 +117,10 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
           ElevatedButton(
             onPressed: () {
               if (formKey.currentState!.validate()) {
-                Navigator.of(context).pop(nameController.text.trim());
+                Navigator.of(context).pop({
+                  'name': nameController.text.trim(),
+                  'email': emailController.text.trim(),
+                });
               }
             },
             child: const Text('Submit'),
@@ -110,26 +129,38 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
       ),
     );
 
-    if (newName != null && newName.isNotEmpty) {
+    if (newStudentDetails != null) {
+      final newName = newStudentDetails['name']!;
+      final newEmail = newStudentDetails['email']!;
       try {
         final teacher =
             await TeacherRepository().getTeacherById(widget.course.teacherId);
         if (teacher != null && teacher.organizationId != null) {
           final tempRegCode = (100000 + Random().nextInt(900000)).toString();
           await _studentRepo.addStudentToOrganization(
-              newName, tempRegCode, teacher.organizationId!);
+              newName, tempRegCode, teacher.organizationId!,
+              email: newEmail);
 
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
+            // Show a more explicit success dialog
+            await showDialog(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text('Request Submitted'),
                 content: Text(
-                    'Registration request for "$newName" submitted to Admin!'),
-                backgroundColor: AppColors.success,
-                behavior: SnackBarBehavior.floating,
+                    'The registration request for "$newName" has been sent to the administrator for approval. Once approved, they will appear in the organization list.'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('OK'),
+                  )
+                ],
               ),
             );
           }
-          _loadSchoolRoster();
+          // After submission, reload the roster to include the new pending student.
+          // This ensures the UI is immediately consistent.
+          await _loadSchoolRoster();
         }
       } catch (e) {
         if (mounted) {

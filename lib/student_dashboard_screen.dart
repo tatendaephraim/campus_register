@@ -732,28 +732,31 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
               const SliverFillRemaining(
                 child: Center(child: CircularProgressIndicator()),
               )
-            else if (_studentProfiles.isEmpty)
+            else if (_studentProfiles.isEmpty || _courseByProfileId.isEmpty)
               SliverFillRemaining(
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(AppSpace.xxl),
+                hasScrollBody: false, // Prevents internal scroll and helps with overflow
+                child: Container(
+                  padding: const EdgeInsets.all(AppSpace.xxl),
+                  child: Center(
                     child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Lottie.asset(
-                          'assets/lottie/classroom.json',
-                          height: 180,
-                          width: 180,
+                          'assets/lottie/Educatin.json',
+                          height: 160,
+                          width: 160,
                           fit: BoxFit.contain,
-                          errorBuilder: (context, error, stackTrace) => const Icon(
-                            Icons.menu_book_rounded,
-                            size: 64,
-                            color: AppColors.slate400,
+                          errorBuilder: (context, error, stackTrace) => Icon(
+                            Icons.school_rounded,
+                            size: 80,
+                            color: theme.colorScheme.primary.withOpacity(0.1),
                           ),
                         ),
                         const SizedBox(height: AppSpace.xl),
                         Text(
-                          'No courses registered yet',
+                          'No active courses',
+                          textAlign: TextAlign.center,
                           style: AppType.display(
                             context,
                             fontSize: 17,
@@ -763,9 +766,20 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                         ),
                         const SizedBox(height: AppSpace.sm),
                         Text(
-                          'Tap the "+" button in the header to register your first course.',
+                          'You haven\'t enrolled in any courses yet or your registration is pending approval.',
                           textAlign: TextAlign.center,
                           style: AppType.body(context, fontSize: 13, color: AppColors.textSecondary(isDark)),
+                        ),
+                        const SizedBox(height: AppSpace.xl),
+                        ElevatedButton.icon(
+                          onPressed: _loadAllDashboardData,
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: const Text('Sync with cloud'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: theme.colorScheme.primary.withOpacity(0.12),
+                            foregroundColor: theme.colorScheme.primary,
+                            elevation: 0,
+                          ),
                         ),
                       ],
                     ),

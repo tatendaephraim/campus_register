@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'database_helper.dart';
 import 'course.dart';
+import 'venue_repository.dart';
 
 /// Repository for handling data operations for the [Course] model.
 class CourseRepository {
@@ -17,12 +18,12 @@ class CourseRepository {
 
     // 1. Try syncing to Supabase if online
     Course? supabaseCourse;
+    final map = course.toMap();
+    if (course.id == null) {
+      map.remove('id');
+    }
+
     try {
-      final map = course.toMap();
-      if (course.id == null) {
-        map.remove('id');
-      }
-      
       final response = await _supabase
           .from('courses')
           .insert(map)
@@ -31,6 +32,37 @@ class CourseRepository {
       
       supabaseCourse = Course.fromMap(response);
       print('✅ Synced Course to Supabase: ${supabaseCourse.name}');
+    } on PostgrestException catch (e) {
+      if (e.message.contains('courses_venue_id_fkey')) {
+        print('⚠️ Course venue missing in cloud. Attempting to sync venue first...');
+        try {
+          final venueId = course.venueId;
+          if (venueId != null) {
+            final venueRepo = VenueRepository();
+            final localVenue = await venueRepo.getVenueById(venueId);
+            if (localVenue != null) {
+               // Push venue to cloud
+               await _supabase.from('venues').upsert(localVenue.toMap());
+               print('✅ Auto-synced missing course venue: ${localVenue.name}');
+
+               // Re-attempt original course sync
+               final retryResponse = await _supabase.from('courses').insert(map).select().single();
+               supabaseCourse = Course.fromMap(retryResponse);
+               print('✅ Course synced successfully after venue repair.');
+               return supabaseCourse;
+            }
+          }
+          
+          // Fallback if venue not found locally
+          map['venue_id'] = null;
+          final fallbackResponse = await _supabase.from('courses').insert(map).select().single();
+          supabaseCourse = Course.fromMap(fallbackResponse);
+        } catch (innerE) {
+          print('⚠️ Failed course-venue-first repair sync: $innerE');
+        }
+      } else {
+        print('⚠️ Supabase Course insert error: $e');
+      }
     } catch (e) {
       print('⚠️ Supabase Course insert error: $e');
     }

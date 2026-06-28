@@ -494,14 +494,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             theme: theme,
             isDark: isDark,
             isActive: false,
-            onTap: () {
+            onTap: () async {
               Navigator.of(context).pop();
               if (_organization != null) {
-                Navigator.of(context).push(
+                await Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (context) => OrganizationInfoScreen(organization: _organization!),
                   ),
                 );
+                _loadAllData();
               }
             },
           ),
@@ -3932,10 +3933,12 @@ class _OrganizationInfoScreenState extends State<OrganizationInfoScreen>
   late final AnimationController _animController;
   late final Animation<double>   _fadeIn;
   bool _codeCopied = false;
+  late Organization _currentOrg;
 
   @override
   void initState() {
     super.initState();
+    _currentOrg = widget.organization;
     _animController = AnimationController(vsync: this, duration: const Duration(milliseconds: 500));
     _fadeIn = CurvedAnimation(parent: _animController, curve: Curves.easeOut);
     _animController.forward();
@@ -3945,6 +3948,154 @@ class _OrganizationInfoScreenState extends State<OrganizationInfoScreen>
   void dispose() {
     _animController.dispose();
     super.dispose();
+  }
+
+  void _showEditDialog() {
+    final nameController = TextEditingController(text: _currentOrg.name);
+    final addressController = TextEditingController(text: _currentOrg.address ?? '');
+    final countryController = TextEditingController(text: _currentOrg.country ?? '');
+    
+    // Sanitize and map type to avoid DropdownButton assertion crash on custom values (e.g. 'university')
+    final String currentType = _currentOrg.type.trim().toLowerCase();
+    String selectedType = 'organization';
+    if (const ['school', 'college', 'business', 'organization'].contains(currentType)) {
+      selectedType = currentType;
+    } else if (currentType == 'university') {
+      selectedType = 'college';
+    }
+    
+    final formKey = GlobalKey<FormState>();
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        bool isSavingLocal = false;
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            return AlertDialog(
+              title: const Text('Edit Organisation Info'),
+              shape: RoundedRectangleBorder(borderRadius: AppRadius.xlR),
+              content: Form(
+                key: formKey,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextFormField(
+                        controller: nameController,
+                        decoration: const InputDecoration(labelText: 'Name', prefixIcon: Icon(Icons.business)),
+                        validator: (v) => v == null || v.isEmpty ? 'Enter name' : null,
+                        enabled: !isSavingLocal,
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: selectedType,
+                        decoration: const InputDecoration(labelText: 'Type', prefixIcon: Icon(Icons.category)),
+                        items: const [
+                          DropdownMenuItem(value: 'school', child: Text('School')),
+                          DropdownMenuItem(value: 'college', child: Text('College / University')),
+                          DropdownMenuItem(value: 'business', child: Text('Business')),
+                          DropdownMenuItem(value: 'organization', child: Text('Organisation')),
+                        ],
+                        onChanged: isSavingLocal ? null : (val) {
+                          if (val != null) {
+                            setDialogState(() {
+                              selectedType = val;
+                            });
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: addressController,
+                        decoration: const InputDecoration(labelText: 'Address', prefixIcon: Icon(Icons.location_on)),
+                        enabled: !isSavingLocal,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: countryController,
+                        decoration: const InputDecoration(labelText: 'Country', prefixIcon: Icon(Icons.flag)),
+                        enabled: !isSavingLocal,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSavingLocal ? null : () => Navigator.pop(dialogContext), 
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: isSavingLocal ? null : () async {
+                    if (formKey.currentState!.validate()) {
+                      setDialogState(() {
+                        isSavingLocal = true;
+                      });
+                      
+                      final newName = nameController.text.trim();
+                      final newAddress = addressController.text.trim();
+                      final newCountry = countryController.text.trim();
+                      
+                      try {
+                        await OrganizationRepository().updateOrganizationDetails(
+                          _currentOrg.id!, 
+                          name: newName,
+                          address: newAddress,
+                          country: newCountry,
+                          type: selectedType,
+                        );
+                        
+                        if (mounted) {
+                          setState(() {
+                            _currentOrg = Organization(
+                              id: _currentOrg.id,
+                              name: newName,
+                              code: _currentOrg.code,
+                              type: selectedType,
+                              address: newAddress,
+                              country: newCountry,
+                            );
+                          });
+                          Navigator.pop(dialogContext); // Close dialog safely
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Organisation info updated!'),
+                              backgroundColor: Colors.green,
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        setDialogState(() {
+                          isSavingLocal = false;
+                        });
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Update failed: $e'),
+                              backgroundColor: Colors.red,
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                      }
+                    }
+                  },
+                  child: isSavingLocal
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────
@@ -3986,7 +4137,7 @@ class _OrganizationInfoScreenState extends State<OrganizationInfoScreen>
     final theme   = Theme.of(context);
     final isDark  = theme.brightness == Brightness.dark;
     final primary = theme.colorScheme.primary;
-    final org     = widget.organization;
+    final org     = _currentOrg;
     final tColor  = _typeColor(org.type);
 
     return Scaffold(
@@ -4010,6 +4161,14 @@ class _OrganizationInfoScreenState extends State<OrganizationInfoScreen>
                 pinned: true,
                 foregroundColor: Colors.white,
                 backgroundColor: primary,
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.edit_note_rounded),
+                    tooltip: 'Edit Profile',
+                    onPressed: _showEditDialog,
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 flexibleSpace: FlexibleSpaceBar(
                   background: Stack(
                     fit: StackFit.expand,
@@ -4225,7 +4384,7 @@ class _OrganizationInfoScreenState extends State<OrganizationInfoScreen>
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   // Spaced code characters
-                  ...widget.organization.code.split('').asMap().entries.map((e) {
+                  ..._currentOrg.code.split('').asMap().entries.map((e) {
                     final isGroup = e.key > 0 && e.key % 3 == 0;
                     return Row(
                       mainAxisSize: MainAxisSize.min,

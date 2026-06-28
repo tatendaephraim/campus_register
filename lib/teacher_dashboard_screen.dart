@@ -19,6 +19,7 @@ import 'timetable_repository.dart';
 import 'timetable_constraints_repository.dart';
 import 'clock_log_repository.dart';
 import 'teacher_repository.dart';
+import 'database_helper.dart';
 import 'create_course_screen.dart';
 import 'course_details_screen.dart';
 import 'role_selection_screen.dart';
@@ -67,13 +68,15 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
         setState(() {
           _currentTeacher = refreshedTeacher;
         });
+        // Reload courses with the potentially updated teacher ID
+        _loadCourses();
       }
     } catch (_) {}
 
-    final active = await _clockLogRepo.getActiveLog(teacherId: widget.teacher.id, type: 'office');
+    final active = await _clockLogRepo.getActiveLog(teacherId: _currentTeacher?.id ?? widget.teacher.id, type: 'office');
     TimetableConstraints? constraints;
-    if (widget.teacher.organizationId != null) {
-      constraints = await TimetableConstraintsRepository().getConstraints(widget.teacher.organizationId!);
+    if (_currentTeacher?.organizationId != null || widget.teacher.organizationId != null) {
+      constraints = await TimetableConstraintsRepository().getConstraints(_currentTeacher?.organizationId ?? widget.teacher.organizationId!);
     }
     if (mounted) {
       setState(() {
@@ -83,16 +86,48 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
     }
   }
 
-  void _loadCourses() {
+  void _loadCourses() async {
+    final teacherId = _currentTeacher?.id ?? widget.teacher.id;
+    
+    // Safety check: initialize with an empty future if no ID is found
+    if (teacherId == null) {
+      setState(() {
+        _coursesFuture = Future.value([]);
+      });
+      return;
+    }
+    
+    // Initialize immediately to prevent LateInitializationError during the first build
+    final initialFuture = _courseRepo.getCoursesForTeacher(teacherId);
     setState(() {
-      _coursesFuture = _courseRepo.getCoursesForTeacher(widget.teacher.id!);
+      _coursesFuture = initialFuture;
     });
+    
+    // Safety sync: Before fetching courses, let's ensure we are using the cloud ID if available
+    // and that local courses are updated to match it.
+    try {
+      final db = await DatabaseHelper.instance.database;
+      final refreshed = await _teacherRepo.getTeacherByEmail(widget.teacher.email);
+      if (refreshed.id != null && refreshed.id != teacherId) {
+         print('🔄 Dashboard: Migrating courses to Cloud ID ${refreshed.id}');
+         // Perform a local migration if IDs don't match
+         await db.update('courses', {'teacher_id': refreshed.id}, where: 'teacher_id = ?', whereArgs: [teacherId]);
+         if (mounted) {
+           setState(() {
+             _currentTeacher = refreshed;
+             _coursesFuture = _courseRepo.getCoursesForTeacher(refreshed.id!);
+           });
+         }
+      }
+    } catch (e) {
+      print('⚠️ Dashboard sync error: $e');
+    }
   }
 
   void _navigateToCreateCourse() async {
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) => CreateCourseScreen(teacher: widget.teacher),
+        builder: (context) => CreateCourseScreen(teacher: _currentTeacher ?? widget.teacher),
       ),
     );
     _loadCourses();
@@ -134,413 +169,454 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
 
     return Scaffold(
       drawer: _buildDrawer(context),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: isDark
-                ? [AppColors.slate900, AppColors.slate800]
-                : [AppColors.slate50, const Color(0xFFEEF2F6)],
+      body: RefreshIndicator(
+        onRefresh: () async {
+          _loadClockLogs();
+          _loadCourses();
+          await Future.delayed(const Duration(milliseconds: 500));
+        },
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: isDark
+                  ? [AppColors.slate900, AppColors.slate800]
+                  : [AppColors.slate50, const Color(0xFFEEF2F6)],
+            ),
           ),
-        ),
-        child: CustomScrollView(
-          slivers: [
-            SliverAppBar(
-              expandedHeight: 180.0,
-              pinned: true,
-              backgroundColor: isDark ? AppColors.slate950 : theme.colorScheme.primary,
-              foregroundColor: Colors.white,
-              elevation: 4,
-              title: Text(
-                'Campus Register',
-                style: AppType.display(
-                  context,
-                  fontSize: 18,
-                  weight: FontWeight.w700,
-                  color: Colors.white,
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverAppBar(
+                expandedHeight: 180.0,
+                pinned: true,
+                backgroundColor: isDark ? AppColors.slate950 : theme.colorScheme.primary,
+                foregroundColor: Colors.white,
+                elevation: 4,
+                title: Text(
+                  'Campus Register',
+                  style: AppType.display(
+                    context,
+                    fontSize: 18,
+                    weight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
                 ),
-              ),
-              flexibleSpace: FlexibleSpaceBar(
-                background: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    SvgPicture.asset(
-                      'assets/images/banner.svg',
-                      fit: BoxFit.cover,
-                    ),
-                    Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Colors.black.withOpacity(0.35),
-                            Colors.black.withOpacity(0.0),
-                            Colors.black.withOpacity(0.6),
-                          ],
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
+                flexibleSpace: FlexibleSpaceBar(
+                  background: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      SvgPicture.asset(
+                        'assets/images/banner.svg',
+                        fit: BoxFit.cover,
+                      ),
+                      Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.black.withOpacity(0.35),
+                              Colors.black.withOpacity(0.0),
+                              Colors.black.withOpacity(0.6),
+                            ],
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                          ),
                         ),
                       ),
-                    ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(AppSpace.xl, 80.0, AppSpace.xl, AppSpace.md),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            Text(
+                              greeting,
+                              style: AppType.body(
+                                context,
+                                color: Colors.white.withOpacity(0.85),
+                                weight: FontWeight.w700,
+                                fontSize: 10,
+                                letterSpacing: 1.2,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Prof. ${_currentTeacher?.name ?? widget.teacher.name}',
+                              overflow: TextOverflow.ellipsis,
+                              style: AppType.display(
+                                context,
+                                fontSize: 22,
+                                weight: FontWeight.w800,
+                                color: Colors.white,
+                                letterSpacing: -0.5,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              formattedDate,
+                              style: AppType.body(
+                                context,
+                                fontSize: 12,
+                                color: Colors.white.withOpacity(0.7),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              
+              SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Stat / Action Grid (Premium Feature)
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(AppSpace.xl, 80.0, AppSpace.xl, AppSpace.md),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.end,
+                      padding: const EdgeInsets.symmetric(horizontal: AppSpace.xl, vertical: AppSpace.md),
+                      child: Row(
                         children: [
-                          Text(
-                            greeting,
-                            style: AppType.body(
+                          Expanded(
+                            child: _buildActionCard(
                               context,
-                              color: Colors.white.withOpacity(0.85),
-                              weight: FontWeight.w700,
-                              fontSize: 10,
-                              letterSpacing: 1.2,
+                              theme,
+                              isDark,
+                              title: 'Create new course',
+                              subtitle: 'Setup curriculum & schedules',
+                              icon: Icons.add_box_rounded,
+                              color: AppColors.success,
+                              onTap: () {
+                                _navigateToCreateCourse();
+                              },
                             ),
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Prof. ${widget.teacher.name}',
-                            overflow: TextOverflow.ellipsis,
-                            style: AppType.display(
+                          const SizedBox(width: AppSpace.md),
+                          Expanded(
+                            child: _buildActionCard(
                               context,
-                              fontSize: 22,
-                              weight: FontWeight.w800,
-                              color: Colors.white,
-                              letterSpacing: -0.5,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            formattedDate,
-                            style: AppType.body(
-                              context,
-                              fontSize: 12,
-                              color: Colors.white.withOpacity(0.7),
+                              theme,
+                              isDark,
+                              title: 'Supabase sync',
+                              subtitle: 'Active & cloud-linked',
+                              icon: Icons.cloud_sync_rounded,
+                              color: AppColors.indigo,
+                              onTap: () async {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Row(
+                                      children: [
+                                        Icon(Icons.sync, color: Colors.white, size: 18),
+                                        SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text('Synchronizing courses with cloud...'),
+                                        ),
+                                      ],
+                                    ),
+                                    backgroundColor: AppColors.indigo,
+                                    duration: Duration(seconds: 1),
+                                  ),
+                                );
+                                _loadCourses();
+                              },
                             ),
                           ),
                         ],
                       ),
                     ),
+
+                    _buildOfficeClockingCard(context, theme, isDark),
+
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: AppSpace.xl, vertical: AppSpace.lg),
+                      child: Text(
+                        'Your active courses',
+                        style: AppType.display(
+                          context,
+                          fontSize: 19,
+                          weight: FontWeight.w600,
+                          color: AppColors.textPrimary(isDark),
+                          letterSpacing: -0.4,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
-            ),
-            
-            SliverToBoxAdapter(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Stat / Action Grid (Premium Feature)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: AppSpace.xl, vertical: AppSpace.md),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: _buildActionCard(
-                            context,
-                            theme,
-                            isDark,
-                            title: 'Create new course',
-                            subtitle: 'Setup curriculum & schedules',
-                            icon: Icons.add_box_rounded,
-                            color: AppColors.success,
-                            onTap: () {
-                              _navigateToCreateCourse();
-                            },
+
+              SliverToBoxAdapter(
+                child: FutureBuilder<List<Course>>(
+                  future: _coursesFuture,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(vertical: 40),
+                          child: CircularProgressIndicator(),
+                        ),
+                      );
+                    } else if (snapshot.hasError) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(40),
+                          child: Column(
+                            children: [
+                              const Icon(Icons.error_outline, color: Colors.red, size: 48),
+                              const SizedBox(height: 16),
+                              Text('Failed to load courses', style: AppType.display(context, fontSize: 16, weight: FontWeight.w600)),
+                              const SizedBox(height: 8),
+                              Text('${snapshot.error}', textAlign: TextAlign.center, style: AppType.body(context, fontSize: 12)),
+                              TextButton(onPressed: _loadCourses, child: const Text('Try Again')),
+                            ],
                           ),
                         ),
-                        const SizedBox(width: AppSpace.md),
-                        Expanded(
-                          child: _buildActionCard(
-                            context,
-                            theme,
-                            isDark,
-                            title: 'Supabase sync',
-                            subtitle: 'Active & cloud-linked',
-                            icon: Icons.cloud_sync_rounded,
-                            color: AppColors.indigo,
-                            onTap: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: const Row(
-                                    children: [
-                                      Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
-                                      SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text('Supabase Postgres connection active. Logs are synced.'),
-                                      ),
-                                    ],
-                                  ),
-                                  backgroundColor: AppColors.success,
-                                  duration: const Duration(seconds: 2),
+                      );
+                    } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(AppSpace.xxxl),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Lottie.asset(
+                                'assets/lottie/Educatin.json',
+                                height: 180,
+                                width: 180,
+                                fit: BoxFit.contain,
+                                errorBuilder: (context, error, stackTrace) => Icon(
+                                  Icons.school_rounded,
+                                  size: 80,
+                                  color: theme.colorScheme.primary.withOpacity(0.1),
                                 ),
-                              );
-                            },
+                              ),
+                              const SizedBox(height: AppSpace.xl),
+                              Text(
+                                'No courses created yet',
+                                style: AppType.display(
+                                  context,
+                                  fontSize: 17,
+                                  weight: FontWeight.w600,
+                                  color: AppColors.textPrimary(isDark),
+                                ),
+                              ),
+                              const SizedBox(height: AppSpace.sm),
+                              Text(
+                                'Tap the button below to register your first course.',
+                                textAlign: TextAlign.center,
+                                style: AppType.body(context, fontSize: 13, color: AppColors.textSecondary(isDark)),
+                              ),
+                              const SizedBox(height: AppSpace.lg),
+                              ElevatedButton.icon(
+                                onPressed: _loadCourses,
+                                icon: const Icon(Icons.refresh_rounded),
+                                label: const Text('Sync with Cloud'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
+                                  foregroundColor: theme.colorScheme.primary,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
-                    ),
-                  ),
+                      );
+                    }
 
-                  _buildOfficeClockingCard(context, theme, isDark),
+                    final courses = snapshot.data!;
+                    return ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: AppSpace.lg),
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: courses.length,
+                      itemBuilder: (context, index) {
+                        final course = courses[index];
+                        if (course.id == null) return const SizedBox.shrink();
 
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: AppSpace.xl, vertical: AppSpace.lg),
-                    child: Text(
-                      'Your active courses',
-                      style: AppType.display(
-                        context,
-                        fontSize: 19,
-                        weight: FontWeight.w600,
-                        color: AppColors.textPrimary(isDark),
-                        letterSpacing: -0.4,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+                        return FutureBuilder<List<dynamic>>(
+                          future: Future.wait([
+                            _studentRepo.getStudentsForCourse(course.id!),
+                            _timetableRepo.getTimetableForCourse(course.id!),
+                            course.venueId != null
+                                ? VenueRepository().getVenueById(course.venueId!)
+                                : Future.value(null),
+                          ]),
+                          builder: (context, statsSnapshot) {
+                            final studentCount = statsSnapshot.hasData ? statsSnapshot.data![0].length : 0;
+                            final timetableCount = statsSnapshot.hasData ? statsSnapshot.data![1].length : 0;
+                            final app_models.Venue? venue = statsSnapshot.hasData ? statsSnapshot.data![2] as app_models.Venue? : null;
 
-            SliverToBoxAdapter(
-              child: FutureBuilder<List<Course>>(
-                future: _coursesFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  } else if (snapshot.hasError) {
-                    return Center(child: Text('Error: ${snapshot.error}'));
-                  } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(AppSpace.xxxl),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Lottie.asset(
-                              'assets/lottie/classroom.json',
-                              height: 180,
-                              width: 180,
-                              fit: BoxFit.contain,
-                              errorBuilder: (context, error, stackTrace) => Icon(
-                                Icons.menu_book_rounded,
-                                size: 64,
-                                color: isDark ? Colors.grey[600] : AppColors.slate400,
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: AppSpace.md),
+                              clipBehavior: Clip.antiAlias,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: AppRadius.xlR,
+                                side: BorderSide(color: AppColors.border(isDark), width: 1),
                               ),
-                            ),
-                            const SizedBox(height: AppSpace.xl),
-                            Text(
-                              'No courses created yet',
-                              style: AppType.display(
-                                context,
-                                fontSize: 17,
-                                weight: FontWeight.w600,
-                                color: AppColors.textPrimary(isDark),
-                              ),
-                            ),
-                            const SizedBox(height: AppSpace.sm),
-                            Text(
-                              'Tap the button below to register your first course.',
-                              textAlign: TextAlign.center,
-                              style: AppType.body(context, fontSize: 13, color: AppColors.textSecondary(isDark)),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }
-
-                  final courses = snapshot.data!;
-                  return ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: AppSpace.lg),
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: courses.length,
-                    itemBuilder: (context, index) {
-                      final course = courses[index];
-                      return FutureBuilder<List<dynamic>>(
-                        future: Future.wait([
-                          _studentRepo.getStudentsForCourse(course.id!),
-                          _timetableRepo.getTimetableForCourse(course.id!),
-                          course.venueId != null
-                              ? VenueRepository().getVenueById(course.venueId!)
-                              : Future.value(null),
-                        ]),
-                        builder: (context, statsSnapshot) {
-                          final studentCount = statsSnapshot.hasData ? statsSnapshot.data![0].length : 0;
-                          final timetableCount = statsSnapshot.hasData ? statsSnapshot.data![1].length : 0;
-                          final app_models.Venue? venue = statsSnapshot.hasData ? statsSnapshot.data![2] as app_models.Venue? : null;
-
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: AppSpace.md),
-                            clipBehavior: Clip.antiAlias,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: AppRadius.xlR,
-                              side: BorderSide(color: AppColors.border(isDark), width: 1),
-                            ),
-                            child: InkWell(
-                              onTap: () {
-                                Navigator.of(context).push(MaterialPageRoute(
-                                  builder: (context) =>
-                                      CourseDetailsScreen(course: course),
-                                ));
-                              },
-                              borderRadius: AppRadius.xlR,
-                              child: Stack(
-                                children: [
-                                  // Gradient left marker border
-                                  Positioned(
-                                    left: 0,
-                                    top: 0,
-                                    bottom: 0,
-                                    width: 6,
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        borderRadius: const BorderRadius.only(
-                                          topLeft: Radius.circular(AppRadius.xl),
-                                          bottomLeft: Radius.circular(AppRadius.xl),
-                                        ),
-                                        gradient: LinearGradient(
-                                          colors: [
-                                            theme.colorScheme.primary,
-                                            theme.colorScheme.secondary,
-                                          ],
-                                          begin: Alignment.topCenter,
-                                          end: Alignment.bottomCenter,
+                              child: InkWell(
+                                onTap: () async {
+                                  await Navigator.of(context).push(MaterialPageRoute(
+                                    builder: (context) =>
+                                        CourseDetailsScreen(course: course),
+                                  ));
+                                  _loadCourses();
+                                },
+                                borderRadius: AppRadius.xlR,
+                                child: Stack(
+                                  children: [
+                                    // Gradient left marker border
+                                    Positioned(
+                                      left: 0,
+                                      top: 0,
+                                      bottom: 0,
+                                      width: 6,
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          borderRadius: const BorderRadius.only(
+                                            topLeft: Radius.circular(AppRadius.xl),
+                                            bottomLeft: Radius.circular(AppRadius.xl),
+                                          ),
+                                          gradient: LinearGradient(
+                                            colors: [
+                                              theme.colorScheme.primary,
+                                              theme.colorScheme.secondary,
+                                            ],
+                                            begin: Alignment.topCenter,
+                                            end: Alignment.bottomCenter,
+                                          ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                                  Padding(
-                                    padding: const EdgeInsets.fromLTRB(AppSpace.xl, AppSpace.lg, AppSpace.lg, AppSpace.lg),
-                                    child: Row(
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.all(AppSpace.md),
-                                          decoration: BoxDecoration(
-                                            color: theme.colorScheme.primary.withOpacity(0.08),
-                                            borderRadius: AppRadius.mdR,
+                                    Padding(
+                                      padding: const EdgeInsets.fromLTRB(AppSpace.xl, AppSpace.lg, AppSpace.lg, AppSpace.lg),
+                                      child: Row(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.all(AppSpace.md),
+                                            decoration: BoxDecoration(
+                                              color: theme.colorScheme.primary.withOpacity(0.08),
+                                              borderRadius: AppRadius.mdR,
+                                            ),
+                                            child: Icon(
+                                              Icons.class_rounded,
+                                              color: theme.colorScheme.primary,
+                                              size: 26,
+                                            ),
                                           ),
-                                          child: Icon(
-                                            Icons.class_rounded,
-                                            color: theme.colorScheme.primary,
-                                            size: 26,
-                                          ),
-                                        ),
-                                        const SizedBox(width: AppSpace.lg),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                course.name,
-                                                style: AppType.display(
-                                                  context,
-                                                  fontSize: 16,
-                                                  weight: FontWeight.w600,
-                                                  color: AppColors.textPrimary(isDark),
-                                                ),
-                                              ),
-                                              if (course.schoolName != null && course.schoolName!.isNotEmpty) ...[
-                                                const SizedBox(height: 2),
+                                          const SizedBox(width: AppSpace.lg),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
                                                 Text(
-                                                  course.schoolName!,
-                                                  style: AppType.body(
+                                                  course.name,
+                                                  style: AppType.display(
                                                     context,
-                                                    fontSize: 12,
-                                                    color: AppColors.textSecondary(isDark),
-                                                    weight: FontWeight.w500,
+                                                    fontSize: 16,
+                                                    weight: FontWeight.w600,
+                                                    color: AppColors.textPrimary(isDark),
                                                   ),
                                                 ),
-                                              ],
-                                              if (venue != null) ...[
-                                                const SizedBox(height: 4),
+                                                if (course.schoolName != null && course.schoolName!.isNotEmpty) ...[
+                                                  const SizedBox(height: 2),
+                                                  Text(
+                                                    course.schoolName!,
+                                                    style: AppType.body(
+                                                      context,
+                                                      fontSize: 12,
+                                                      color: AppColors.textSecondary(isDark),
+                                                      weight: FontWeight.w500,
+                                                    ),
+                                                  ),
+                                                ],
+                                                if (venue != null) ...[
+                                                  const SizedBox(height: 4),
+                                                  Row(
+                                                    children: [
+                                                      Icon(
+                                                        Icons.location_on_rounded,
+                                                        size: 13,
+                                                        color: theme.colorScheme.primary,
+                                                      ),
+                                                      const SizedBox(width: 4),
+                                                      Expanded(
+                                                        child: Text(
+                                                          venue.name,
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow.ellipsis,
+                                                          style: AppType.body(
+                                                            context,
+                                                            fontSize: 12,
+                                                            color: theme.colorScheme.primary,
+                                                            weight: FontWeight.w600,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ],
+                                                const SizedBox(height: AppSpace.sm),
                                                 Row(
                                                   children: [
                                                     Icon(
-                                                      Icons.location_on_rounded,
-                                                      size: 13,
-                                                      color: theme.colorScheme.primary,
+                                                      Icons.people_outline_rounded,
+                                                      size: 14,
+                                                      color: AppColors.textTertiary(isDark),
                                                     ),
                                                     const SizedBox(width: 4),
-                                                    Expanded(
-                                                      child: Text(
-                                                        venue.name,
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow.ellipsis,
-                                                        style: AppType.body(
-                                                          context,
-                                                          fontSize: 12,
-                                                          color: theme.colorScheme.primary,
-                                                          weight: FontWeight.w600,
-                                                        ),
+                                                    Text(
+                                                      '$studentCount students',
+                                                      style: AppType.data(
+                                                        context,
+                                                        fontSize: 11,
+                                                        color: AppColors.textSecondary(isDark),
+                                                        weight: FontWeight.w600,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: AppSpace.md),
+                                                    Icon(
+                                                      Icons.calendar_today_rounded,
+                                                      size: 13,
+                                                      color: AppColors.textTertiary(isDark),
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      '$timetableCount classes/wk',
+                                                      style: AppType.data(
+                                                        context,
+                                                        fontSize: 11,
+                                                        color: AppColors.textSecondary(isDark),
+                                                        weight: FontWeight.w600,
                                                       ),
                                                     ),
                                                   ],
                                                 ),
                                               ],
-                                              const SizedBox(height: AppSpace.sm),
-                                              Row(
-                                                children: [
-                                                  Icon(
-                                                    Icons.people_outline_rounded,
-                                                    size: 14,
-                                                    color: AppColors.textTertiary(isDark),
-                                                  ),
-                                                  const SizedBox(width: 4),
-                                                  Text(
-                                                    '$studentCount students',
-                                                    style: AppType.data(
-                                                      context,
-                                                      fontSize: 11,
-                                                      color: AppColors.textSecondary(isDark),
-                                                      weight: FontWeight.w600,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: AppSpace.md),
-                                                  Icon(
-                                                    Icons.calendar_today_rounded,
-                                                    size: 13,
-                                                    color: AppColors.textTertiary(isDark),
-                                                  ),
-                                                  const SizedBox(width: 4),
-                                                  Text(
-                                                    '$timetableCount classes/wk',
-                                                    style: AppType.data(
-                                                      context,
-                                                      fontSize: 11,
-                                                      color: AppColors.textSecondary(isDark),
-                                                      weight: FontWeight.w600,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ],
+                                            ),
                                           ),
-                                        ),
-                                        Icon(
-                                          Icons.arrow_forward_ios_rounded,
-                                          size: 14,
-                                          color: AppColors.textTertiary(isDark),
-                                        ),
-                                      ],
+                                          Icon(
+                                            Icons.arrow_forward_ios_rounded,
+                                            size: 14,
+                                            color: AppColors.textTertiary(isDark),
+                                          ),
+                                        ],
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
-                            ),
-                          );
-                        },
-                      );
-                    },
-                  );
-                },
+                            );
+                          },
+                        );
+                      },
+                    );
+                  },
+                ),
               ),
-            ),
-            const SliverToBoxAdapter(
-              child: SizedBox(height: 100.0),
-            ),
-          ],
+              const SliverToBoxAdapter(
+                child: SizedBox(height: 100.0),
+              ),
+            ],
+          ),
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(

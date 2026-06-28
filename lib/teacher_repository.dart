@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'database_helper.dart';
 import 'teacher.dart';
+import 'venue_repository.dart';
 
 /// Repository for handling data operations for the [Teacher] model.
 class TeacherRepository {
@@ -18,13 +19,13 @@ class TeacherRepository {
 
     // 1. Try syncing to Supabase if online
     Teacher? supabaseTeacher;
-    try {
-      final map = teacher.toMap();
-      // Remove id if it is null so Supabase generates it
-      if (teacher.id == null) {
-        map.remove('id');
-      }
+    final map = teacher.toMap();
+    // Remove id if it is null so Supabase generates it
+    if (teacher.id == null) {
+      map.remove('id');
+    }
 
+    try {
       final response = await _supabase
           .from('teachers')
           .upsert(map, onConflict: 'email')
@@ -33,6 +34,41 @@ class TeacherRepository {
 
       supabaseTeacher = Teacher.fromMap(response);
       print('✅ Synced Teacher to Supabase: ${supabaseTeacher.name}');
+    } on PostgrestException catch (e) {
+      if (e.message.contains('teachers_office_venue_id_fkey')) {
+        print('⚠️ Office venue missing in cloud. Attempting to sync venue first...');
+        try {
+          final officeId = teacher.officeVenueId;
+          if (officeId != null) {
+            final venueRepo = VenueRepository();
+            final localVenue = await venueRepo.getVenueById(officeId);
+            if (localVenue != null) {
+               // Push venue to cloud
+               await _supabase.from('venues').upsert(localVenue.toMap());
+               print('✅ Auto-synced missing office venue: ${localVenue.name}');
+               
+               // Re-attempt original teacher sync
+               final retryResponse = await _supabase
+                  .from('teachers')
+                  .upsert(map, onConflict: 'email')
+                  .select()
+                  .single();
+               supabaseTeacher = Teacher.fromMap(retryResponse);
+               print('✅ Teacher synced successfully after venue repair.');
+               return supabaseTeacher;
+            }
+          }
+          
+          // Fallback if venue not found locally
+          map['office_venue_id'] = null;
+          final fallbackResponse = await _supabase.from('teachers').upsert(map, onConflict: 'email').select().single();
+          supabaseTeacher = Teacher.fromMap(fallbackResponse);
+        } catch (innerE) {
+          print('⚠️ Failed venue-first repair sync: $innerE');
+        }
+      } else {
+        print('⚠️ Supabase Teacher upsert error: $e');
+      }
     } catch (e) {
       print('⚠️ Supabase Teacher upsert error: $e');
     }
@@ -131,6 +167,16 @@ class TeacherRepository {
 
   /// Fetches a single teacher from the database by their email.
   Future<Teacher> getTeacherByEmail(String email) async {
+    final db = await dbHelper.database;
+    
+    // Check local first to see if we have an ID mismatch coming up
+    final List<Map<String, dynamic>> localMaps = await db.query(
+      'teachers',
+      where: 'email = ?',
+      whereArgs: [email],
+    );
+    int? localId = localMaps.isNotEmpty ? localMaps.first['id'] as int? : null;
+
     // Try Supabase first
     try {
       final response = await _supabase
@@ -141,8 +187,23 @@ class TeacherRepository {
 
       if (response != null) {
         final teacher = Teacher.fromMap(response);
-        // Cache locally
-        final db = await dbHelper.database;
+        int? supabaseId = teacher.id;
+
+        // If ID changed (syncing from local to Supabase), migration is needed
+        if (localId != null && supabaseId != null && localId != supabaseId) {
+          print('🔄 Teacher ID migration: $localId -> $supabaseId');
+          await db.transaction((txn) async {
+            // Update all related tables that use teacher_id as a foreign key
+            await txn.update('courses', {'teacher_id': supabaseId}, where: 'teacher_id = ?', whereArgs: [localId]);
+            await txn.update('clock_logs', {'teacher_id': supabaseId}, where: 'teacher_id = ?', whereArgs: [localId]);
+            await txn.update('attendance_waivers', {'teacher_id': supabaseId}, where: 'teacher_id = ?', whereArgs: [localId]);
+            
+            // Delete old record and insert new one
+            await txn.delete('teachers', where: 'id = ?', whereArgs: [localId]);
+          });
+        }
+        
+        // ... local caching logic ...
         final List<Map<String, dynamic>> local = await db.query(
           'teachers',
           columns: ['office_venue_id'],
@@ -165,20 +226,21 @@ class TeacherRepository {
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
         return Teacher.fromMap(map);
+      } else if (localMaps.isNotEmpty) {
+        // CRITICAL FIX: Teacher is local but missing from Supabase. PUSH IT NOW.
+        print('⚠️ Teacher found locally but missing from Supabase. Attempting repair sync...');
+        final localTeacher = Teacher.fromMap(localMaps.first);
+        return await upsertTeacher(localTeacher);
       }
     } catch (e) {
       print('⚠️ Supabase fetch teacher error: $e');
     }
 
     // Fallback to SQLite
-    final db = await dbHelper.database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'teachers',
-      where: 'email = ?',
-      whereArgs: [email],
-    );
-
-    return Teacher.fromMap(maps.first);
+    if (localMaps.isNotEmpty) {
+      return Teacher.fromMap(localMaps.first);
+    }
+    throw Exception('Teacher not found');
   }
 
   /// Fetches all teachers in the database.
@@ -261,6 +323,47 @@ class TeacherRepository {
       orderBy: 'name',
     );
     return List.generate(maps.length, (i) => Teacher.fromMap(maps[i]));
+  }
+
+  /// Fetches pending students for an organization.
+  Future<List<Map<String, dynamic>>> getPendingStudents(
+      int organizationId) async {
+    try {
+      final List<dynamic> response = await _supabase
+          .from('students')
+          .select()
+          .eq('organization_id', organizationId)
+          .filter('is_approved', 'is', null) // Fixed: use filter instead of is_ to check for null
+          .order('name');
+
+      final students = response.cast<Map<String, dynamic>>();
+
+      // Cache all locally
+      final db = await dbHelper.database;
+      final batch = db.batch();
+      for (var studentData in students) {
+        // Ensure local cache has a representation of the student
+        batch.insert('students', studentData,
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await batch.commit(noResult: true);
+
+      print(
+          '✅ Fetched and cached ${students.length} pending students from Supabase.');
+      return students;
+    } catch (e) {
+      print('⚠️ Supabase fetch pending students error: $e');
+    }
+
+    // Fallback to SQLite if Supabase fails
+    final db = await dbHelper.database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'students',
+      where: 'organization_id = ? AND (is_approved IS NULL OR is_approved = 0)',
+      whereArgs: [organizationId],
+      orderBy: 'name',
+    );
+    return maps;
   }
 
   /// Fetches approved employees for an organization.
@@ -434,5 +537,36 @@ class TeacherRepository {
       where: 'id = ?',
       whereArgs: [teacherId],
     );
+  }
+
+  /// Fetches the name of the organization a teacher belongs to.
+  ///
+  /// This is useful for automatically populating fields like 'school_name'
+  /// when creating new entities like a Course.
+  Future<String?> getTeacherOrganizationName(int teacherId) async {
+    try {
+      // First, get the teacher's organization_id
+      final teacherResponse = await _supabase
+          .from('teachers')
+          .select('organization_id')
+          .eq('id', teacherId)
+          .maybeSingle();
+
+      if (teacherResponse == null || teacherResponse['organization_id'] == null)
+        return null;
+
+      final orgId = teacherResponse['organization_id'];
+
+      // Then, fetch the organization's name using the ID
+      final orgResponse = await _supabase
+          .from('organizations')
+          .select('name')
+          .eq('id', orgId)
+          .single();
+      return orgResponse['name'] as String?;
+    } catch (e) {
+      print('⚠️ Supabase getTeacherOrganizationName error: $e');
+      return null;
+    }
   }
 }
