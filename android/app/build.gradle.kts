@@ -42,3 +42,8 @@ android {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // LaunchTheme extends Theme.AppCompat, which BiometricPrompt needs.
+    implementation("androidx.appcompat:appcompat:1.7.1")
+}

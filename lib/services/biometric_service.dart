@@ -1,23 +1,30 @@
 import 'package:local_auth/local_auth.dart';
 
+enum BiometricOutcome { verified, failed, unavailable }
+
 class BiometricService {
   final LocalAuthentication _auth = LocalAuthentication();
 
-  Future<bool> authenticate() async {
+  Future<BiometricOutcome> authenticate() async {
     try {
-      final canAuthenticate = await _auth.canCheckBiometrics || await _auth.isDeviceSupported();
-      if (!canAuthenticate) return false;
-
-      return await _auth.authenticate(
-        localizedReason: 'Use your fingerprint to sign the register',
-        options: const AuthenticationOptions(
-          useErrorDialogs: true,
-          stickyAuth: true,
-          biometricOnly: true,
-        ),
+      final verified = await _auth.authenticate(
+        localizedReason: 'Verify your identity to sign the register',
+        // A PIN can be told to a friend; a biometric cannot.
+        biometricOnly: true,
+        persistAcrossBackgrounding: true,
       );
-    } catch (e) {
-      return false;
+      return verified ? BiometricOutcome.verified : BiometricOutcome.failed;
+    } on LocalAuthException catch (e) {
+      return switch (e.code) {
+        LocalAuthExceptionCode.noBiometricHardware ||
+        LocalAuthExceptionCode.noBiometricsEnrolled ||
+        LocalAuthExceptionCode.noCredentialsSet ||
+        LocalAuthExceptionCode.biometricHardwareTemporarilyUnavailable ||
+        LocalAuthExceptionCode.uiUnavailable => BiometricOutcome.unavailable,
+        _ => BiometricOutcome.failed,
+      };
+    } catch (_) {
+      return BiometricOutcome.unavailable; // Fail closed.
     }
   }
 }
