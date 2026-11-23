@@ -83,19 +83,49 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     setState(() => _isLoadingData = true);
     try {
       final org = await _orgRepo.getOrganizationById(widget.admin.organizationId!);
-      if (org != null) {
-        _organization = org;
-        _pendingTeachers = await _teacherRepo.getPendingEmployees(org.id!);
-        _pendingStudents = await _studentRepo.getPendingStudents(org.id!);
-        _approvedStudents = await _studentRepo.getApprovedStudents(org.id!);
-        _approvedEmployees = await _teacherRepo.getApprovedEmployees(org.id!);
-
-        // Load Real-time metrics from SQLite database
-        _studentStats = await AttendanceRepository().getOrganizationAttendanceStats(org.id!, period: _analyticsPeriod);
-        _studentTrend = await AttendanceRepository().getOrganizationAttendanceTrend(org.id!, period: _analyticsPeriod);
-        _employeeStats = await ClockLogRepository().getOrganizationClockStats(org.id!, period: _analyticsPeriod);
-        _employeeTrend = await ClockLogRepository().getOrganizationClockTrend(org.id!, period: _analyticsPeriod);
+      if (org == null) {
+        return;
       }
+
+      final pendingTeachersFuture = _teacherRepo.getPendingEmployees(org.id!);
+      final pendingStudentsFuture = _studentRepo.getPendingStudents(org.id!);
+      final approvedStudentsFuture = _studentRepo.getApprovedStudents(org.id!);
+      final approvedEmployeesFuture = _teacherRepo.getApprovedEmployees(org.id!);
+      final studentStatsFuture =
+          AttendanceRepository().getOrganizationAttendanceStats(org.id!, period: _analyticsPeriod);
+      final studentTrendFuture =
+          AttendanceRepository().getOrganizationAttendanceTrend(org.id!, period: _analyticsPeriod);
+      final employeeStatsFuture =
+          ClockLogRepository().getOrganizationClockStats(org.id!, period: _analyticsPeriod);
+      final employeeTrendFuture =
+          ClockLogRepository().getOrganizationClockTrend(org.id!, period: _analyticsPeriod);
+
+      final results = await Future.wait([
+        pendingTeachersFuture,
+        pendingStudentsFuture,
+        approvedStudentsFuture,
+        approvedEmployeesFuture,
+        studentStatsFuture,
+        studentTrendFuture,
+        employeeStatsFuture,
+        employeeTrendFuture,
+      ]);
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _organization = org;
+        _pendingTeachers = results[0] as List<Teacher>;
+        _pendingStudents = results[1] as List<Student>;
+        _approvedStudents = results[2] as List<Student>;
+        _approvedEmployees = results[3] as List<Teacher>;
+        _studentStats = results[4] as Map<String, int>;
+        _studentTrend = results[5] as Map<String, double>;
+        _employeeStats = results[6] as Map<String, int>;
+        _employeeTrend = results[7] as Map<String, double>;
+      });
     } catch (e) {
       print('Error loading admin dashboard data: $e');
     } finally {

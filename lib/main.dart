@@ -30,10 +30,7 @@ void main() async {
   // Initialize Theme Service
   await ThemeService.instance.init();
 
-  // Determine the initial screen.
-  final Widget initialScreen = await _getInitialScreen();
-
-  runApp(CampusRegisterApp(initialScreen: initialScreen));
+  runApp(const CampusRegisterApp());
 }
 
 /// Checks if a student is registered on this device or a teacher is logged in, and returns the appropriate
@@ -99,8 +96,7 @@ Future<String?> _getDeviceId() async {
 }
 
 class CampusRegisterApp extends StatelessWidget {
-  final Widget initialScreen;
-  const CampusRegisterApp({super.key, required this.initialScreen});
+  const CampusRegisterApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -253,7 +249,39 @@ class CampusRegisterApp extends StatelessWidget {
               iconTheme: const IconThemeData(color: Colors.white),
             ),
           ),
-          home: initialScreen,
+          home: const StartupGate(),
+        );
+      },
+    );
+  }
+}
+
+class StartupGate extends StatefulWidget {
+  const StartupGate({super.key});
+
+  @override
+  State<StartupGate> createState() => _StartupGateState();
+}
+
+class _StartupGateState extends State<StartupGate> {
+  late final Future<Widget> _initialScreenFuture = _getInitialScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Widget>(
+      future: _initialScreenFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.done && snapshot.hasData) {
+          return snapshot.data!;
+        }
+
+        if (snapshot.hasError) {
+          return const RoleSelectionScreen();
+        }
+
+        return Scaffold(
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          body: const Center(child: CircularProgressIndicator()),
         );
       },
     );

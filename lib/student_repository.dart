@@ -453,7 +453,8 @@ class StudentRepository {
           .select()
           .eq('organization_id', organizationId)
           .eq('is_approved', 0)
-          .order('name');
+          .order('name')
+          .timeout(const Duration(seconds: 8));
       return response.map((item) => Student.fromMap(item as Map<String, dynamic>)).toList();
     } catch (e) {
       print('⚠️ Supabase fetch pending students error: $e');
@@ -477,7 +478,8 @@ class StudentRepository {
           .select()
           .eq('organization_id', organizationId)
           .eq('is_approved', 1)
-          .order('name');
+          .order('name')
+          .timeout(const Duration(seconds: 8));
       return response.map((item) => Student.fromMap(item as Map<String, dynamic>)).toList();
     } catch (e) {
       print('⚠️ Supabase fetch approved students error: $e');

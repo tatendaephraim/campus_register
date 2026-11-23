@@ -183,7 +183,8 @@ class TeacherRepository {
           .from('teachers')
           .select()
           .eq('email', email)
-          .maybeSingle();
+          .maybeSingle()
+          .timeout(const Duration(seconds: 8));
 
       if (response != null) {
         final teacher = Teacher.fromMap(response);
@@ -283,7 +284,8 @@ class TeacherRepository {
           .select()
           .eq('organization_id', organizationId)
           .eq('is_approved', 0)
-          .order('name');
+          .order('name')
+          .timeout(const Duration(seconds: 8));
       final teachers = response
           .map((item) => Teacher.fromMap(item as Map<String, dynamic>))
           .toList();
@@ -374,7 +376,8 @@ class TeacherRepository {
           .select()
           .eq('organization_id', organizationId)
           .eq('is_approved', 1)
-          .order('name');
+          .order('name')
+          .timeout(const Duration(seconds: 8));
       final teachers = response
           .map((item) => Teacher.fromMap(item as Map<String, dynamic>))
           .toList();
