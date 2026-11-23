@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 
-ThemeData appTheme(Brightness brightness) {
+ThemeData appTheme() {
   return ThemeData(
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: Colors.deepPurple,
-      brightness: brightness,
-    ),
+    useMaterial3: true,
+    colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
   );
 }

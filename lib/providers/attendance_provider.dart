@@ -1,234 +1,218 @@
-import 'dart:async';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
-
-import '../config/app_config.dart';
-import '../data/local/attendance_store.dart';
-import '../data/models/attendance_event.dart';
-import '../data/models/student_profile.dart';
-import '../data/remote/google_sheets_api.dart';
-import '../data/repositories/attendance_repository.dart';
-import '../domain/attendance_policy.dart';
-import '../services/biometric_service.dart';
 import '../services/location_service.dart';
-
-final clockProvider = Provider<DateTime Function()>((ref) => DateTime.now);
-
-final policyProvider = Provider<AttendancePolicy>((ref) => AppConfig.policy);
-
-final locationServiceProvider = Provider((ref) => LocationService());
-
-final biometricServiceProvider = Provider((ref) => BiometricService());
-
-final repositoryProvider = FutureProvider<AttendanceRepository>((ref) async {
-  final repository = AttendanceRepository(
-    AttendanceStore(await getApplicationSupportDirectory()),
-    GoogleSheetsApi(url: AppConfig.syncUrl, token: AppConfig.syncToken),
-  );
-  await repository.load();
-  return repository;
-});
-
-final attendanceProvider =
-    AsyncNotifierProvider<AttendanceNotifier, AttendanceState>(
-      AttendanceNotifier.new,
-    );
-
-class Notice {
-  const Notice(this.text, {this.isError = false});
-  final String text;
-  final bool isError;
-}
+import '../services/biometric_service.dart';
+import '../services/altitude_service.dart';
+import '../data/repositories/attendance_repository.dart';
+import '../data/models/attendance_record.dart';
+import '../data/models/venue.dart';
 
 class AttendanceState {
-  const AttendanceState({
-    required this.profile,
-    required this.events,
-    required this.syncedCount,
-    required this.intact,
-    required this.nextType,
-    this.check,
-    this.accuracyM,
-    this.problem,
-    this.locating = false,
-    this.signing = false,
-    this.notice,
-    this.syncNote = '',
+  final bool isAtCampus;
+  final bool isAlreadyMarked;
+  final String? errorMessage;
+  final String? userName;
+  final double currentAltitude;
+  final int currentFloor;
+  final Venue? currentVenue;
+  final List<Venue> availableVenues;
+  final double? distanceToVenue;
+
+  AttendanceState({
+    this.isAtCampus = false,
+    this.isAlreadyMarked = false,
+    this.errorMessage,
+    this.userName,
+    this.currentAltitude = 0.0,
+    this.currentFloor = 0,
+    this.currentVenue,
+    this.availableVenues = const [],
+    this.distanceToVenue,
   });
 
-  final StudentProfile? profile;
-  final List<AttendanceEvent> events;
-  final int syncedCount;
-  final bool intact;
-  final AttendanceType nextType;
-
-  /// Latest location verdict, for guidance only. Signing always re-checks.
-  final PolicyResult? check;
-  final double? accuracyM;
-  final LocationProblem? problem;
-
-  final bool locating;
-  final bool signing;
-  final Notice? notice;
-  final String syncNote;
-
-  int get pendingCount => events.length - syncedCount;
+  AttendanceState copyWith({
+    bool? isAtCampus,
+    bool? isAlreadyMarked,
+    String? errorMessage,
+    String? userName,
+    double? currentAltitude,
+    int? currentFloor,
+    Venue? currentVenue,
+    List<Venue>? availableVenues,
+    double? distanceToVenue,
+  }) {
+    return AttendanceState(
+      isAtCampus: isAtCampus ?? this.isAtCampus,
+      isAlreadyMarked: isAlreadyMarked ?? this.isAlreadyMarked,
+      errorMessage: errorMessage ?? this.errorMessage,
+      userName: userName ?? this.userName,
+      currentAltitude: currentAltitude ?? this.currentAltitude,
+      currentFloor: currentFloor ?? this.currentFloor,
+      currentVenue: currentVenue ?? this.currentVenue,
+      availableVenues: availableVenues ?? this.availableVenues,
+      distanceToVenue: distanceToVenue ?? this.distanceToVenue,
+    );
+  }
 }
 
-class AttendanceNotifier extends AsyncNotifier<AttendanceState> {
-  late AttendanceRepository _repository;
+class AttendanceNotifier extends Notifier<AttendanceState> {
+  final LocationService _locationService = LocationService();
+  final BiometricService _biometricService = BiometricService();
+  final AttendanceRepository _repository = AttendanceRepository();
+  final AltitudeService _altitudeService = AltitudeService.instance;
 
-  PolicyResult? _check;
-  double? _accuracyM;
-  LocationProblem? _problem;
-  bool _locating = false;
-  bool _signing = false;
-  Notice? _notice;
-  String _syncNote = '';
+  // Default venues - can be managed by admin
+  final List<Venue> _defaultVenues = [
+    Venue(
+      id: 'main_campus',
+      name: 'Main Campus',
+      latitude: -1.927196,
+      longitude: 30.140773,
+      altitude: 1500.0,
+      description: 'Primary campus location',
+    ),
+    Venue(
+      id: 'lecture_hall_a',
+      name: 'Lecture Hall A',
+      latitude: -1.927196,
+      longitude: 30.140773,
+      altitude: 1510.5, // 3rd floor
+      horizontalRadius: 50.0,
+      description: 'Computer Science Building - Floor 3',
+    ),
+  ];
 
   @override
-  Future<AttendanceState> build() async {
-    _repository = await ref.watch(repositoryProvider.future);
-    return _snapshot();
-  }
-
-  AttendanceState _snapshot() => AttendanceState(
-    profile: _repository.profile,
-    events: _repository.events,
-    syncedCount: _repository.syncedCount,
-    intact: _repository.isIntact,
-    nextType: _repository.nextType(ref.read(clockProvider)()),
-    check: _check,
-    accuracyM: _accuracyM,
-    problem: _problem,
-    locating: _locating,
-    signing: _signing,
-    notice: _notice,
-    syncNote: _syncNote,
-  );
-
-  void _publish() {
-    if (ref.mounted) state = AsyncData(_snapshot());
-  }
-
-  Future<void> enrol({required String studentId, required String name}) async {
-    await _repository.enrol(
-      StudentProfile.enrol(studentId: studentId, name: name),
+  AttendanceState build() {
+    // Initialize with default venues and first venue selected
+    return AttendanceState(
+      availableVenues: _defaultVenues,
+      currentVenue: _defaultVenues.first,
     );
-    _publish();
   }
 
-  Future<void> refresh() async {
-    if (_locating || _signing) return;
-    _locating = true;
-    _publish();
-    try {
-      await _locate();
-    } finally {
-      _locating = false;
-      _publish();
+  void setUserName(String name) {
+    state = state.copyWith(userName: name, errorMessage: null);
+  }
+
+  void selectVenue(Venue venue) {
+    state = state.copyWith(
+      currentVenue: venue,
+      errorMessage: null,
+      isAlreadyMarked: false,
+    );
+    refreshLocation();
+  }
+
+  void addVenue(Venue venue) {
+    final updatedVenues = [...state.availableVenues, venue];
+    state = state.copyWith(
+      availableVenues: updatedVenues,
+      currentVenue: venue,
+    );
+  }
+
+  void removeVenue(String venueId) {
+    final updatedVenues =
+        state.availableVenues.where((v) => v.id != venueId).toList();
+    state = state.copyWith(
+      availableVenues: updatedVenues,
+      currentVenue: updatedVenues.isNotEmpty ? updatedVenues.first : null,
+    );
+  }
+
+  Future<void> refreshLocation() async {
+    if (state.currentVenue == null) {
+      state = state.copyWith(errorMessage: 'No venue selected');
+      return;
     }
-    await sync();
+
+    final location = await _locationService.getCurrentLocation();
+    final venue = state.currentVenue!;
+
+    // Calculate distance for display (to center point)
+    final distance = _locationService.calculateDistance(
+      location.latitude,
+      location.longitude,
+      venue.latitude,
+      venue.longitude,
+    );
+
+    // Verify 3D Location (with polygon support)
+    final isAtCampus = _locationService.isAtVenueWithTolerance(
+      location,
+      venue.latitude,
+      venue.longitude,
+      venue.altitude,
+      venue.horizontalRadius,
+      venue.verticalTolerance,
+      polygonCorners: venue.polygonCorners,
+    );
+
+    // Calculate current floor
+    final floor =
+        _altitudeService.calculateFloor(location.altitude, venue.altitude);
+
+    state = state.copyWith(
+      isAtCampus: isAtCampus,
+      currentAltitude: location.altitude,
+      currentFloor: floor,
+      distanceToVenue: distance,
+      errorMessage: null, // Clear any previous errors when refreshing location
+    );
   }
 
-  Future<void> sync() async {
-    final result = await _repository.sync();
-    _syncNote = switch (result.status) {
-      SyncStatus.ok => '',
-      SyncStatus.notConfigured => 'No server configured; records stay here.',
-      SyncStatus.offline => 'Server unreachable (${result.detail}).',
-      SyncStatus.rejected => 'Server refused a record: ${result.detail}.',
-    };
-    _publish();
-  }
-
-  /// Runs the whole decision and logs its outcome, whether accepted or not.
-  Future<void> sign() async {
-    if (_locating || _signing || _repository.profile == null) return;
-    _signing = true;
-    _notice = null;
-    _publish();
-    try {
-      await _sign();
-    } catch (e) {
-      _notice = Notice('The attempt could not be saved: $e', isError: true);
-    } finally {
-      _signing = false;
-      _publish();
+  Future<void> attemptAttendance(String type) async {
+    if (state.userName == null) {
+      state = state.copyWith(errorMessage: 'Please set a user name first.');
+      return;
     }
-    // The record is already safe on disk, so the user need not wait for this.
-    unawaited(sync());
-  }
 
-  Future<void> _sign() async {
-    if (!_repository.isIntact) {
-      _notice = const Notice(
-        'The local log has been altered, so signing is disabled.',
-        isError: true,
+    if (state.currentVenue == null) {
+      state = state.copyWith(errorMessage: 'No venue selected.');
+      return;
+    }
+
+    await refreshLocation();
+
+    if (!state.isAtCampus) {
+      state = state.copyWith(
+        errorMessage: 'You are not at ${state.currentVenue!.name}',
       );
       return;
     }
-    final now = ref.read(clockProvider);
-    final type = _repository.nextType(now());
 
-    final locationTimer = Stopwatch()..start();
-    final reading = await _locate();
-    locationTimer.stop();
-    var result = _check!;
-
-    final biometricTimer = Stopwatch();
-    if (result.decision.isAccepted) {
-      biometricTimer.start();
-      final outcome = await ref.read(biometricServiceProvider).authenticate();
-      biometricTimer.stop();
-      result = switch (outcome) {
-        // The prompt can stay open indefinitely, so the fix must still be
-        // fresh when the biometric succeeds.
-        BiometricOutcome.verified => _evaluate(reading),
-        BiometricOutcome.failed => PolicyResult(
-          Decision.biometricFailed,
-          distanceM: result.distanceM,
-        ),
-        BiometricOutcome.unavailable => PolicyResult(
-          Decision.biometricUnavailable,
-          distanceM: result.distanceM,
-        ),
-      };
+    final authenticated = await _biometricService.authenticate();
+    if (!authenticated) {
+      final errorMsg =
+          _biometricService.lastError ?? 'Biometric verification failed';
+      state = state.copyWith(errorMessage: errorMsg);
+      return;
     }
 
-    final decision = result.decision;
-    await _repository.record(
+    final venue = state.currentVenue!;
+    final record = AttendanceRecord(
+      name: state.userName!,
+      timestamp: DateTime.now(),
       type: type,
-      decision: decision,
-      at: now(),
-      distanceM: result.distanceM,
-      accuracyM: reading.position?.accuracyM,
-      locationMs: locationTimer.elapsedMilliseconds,
-      biometricMs: biometricTimer.elapsedMilliseconds,
+      location:
+          '${venue.latitude.toStringAsFixed(6)}, ${venue.longitude.toStringAsFixed(6)}',
+      altitude: state.currentAltitude,
+      estimatedFloor: state.currentFloor,
+      venueName: venue.name,
+      venueDescription: venue.description,
+      latitude: venue.latitude,
+      longitude: venue.longitude,
     );
-    _notice = Notice(
-      reading.problem?.message ?? decision.message,
-      isError: !decision.isAccepted,
+
+    final success = await _repository.saveAttendance(record);
+    state = state.copyWith(
+      isAlreadyMarked: success,
+      errorMessage: success ? null : 'Data Sync Failed',
     );
-  }
-
-  Future<LocationReading> _locate() async {
-    final reading = await ref.read(locationServiceProvider).read();
-    _accuracyM = reading.position?.accuracyM;
-    _problem = reading.problem;
-    _check = _evaluate(reading);
-    return reading;
-  }
-
-  PolicyResult _evaluate(LocationReading reading) {
-    final events = _repository.events;
-    return ref
-        .read(policyProvider)
-        .evaluate(
-          position: reading.position,
-          now: ref.read(clockProvider)(),
-          lastEventAt: events.isEmpty ? null : events.last.time,
-        );
   }
 }
+
+final attendanceProvider =
+    NotifierProvider<AttendanceNotifier, AttendanceState>(() {
+  return AttendanceNotifier();
+});

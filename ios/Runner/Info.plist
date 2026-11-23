@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
     <key>NSLocationWhenInUseUsageDescription</key>
-    <string>Your location is checked when you sign the register, to confirm you are on campus.</string>
+    <string>App needs location to verify campus presence.</string>
     <key>NSFaceIDUsageDescription</key>
-    <string>Face ID confirms that you are the enrolled owner of this device.</string>
+    <string>App needs biometrics to verify identity.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

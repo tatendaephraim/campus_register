@@ -1,99 +1,224 @@
-import '../../domain/attendance_policy.dart';
-import '../local/attendance_store.dart';
-import '../models/attendance_event.dart';
-import '../models/student_profile.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../local/attendance_local_data_source.dart';
 import '../remote/google_sheets_api.dart';
+import '../models/attendance_record.dart';
 
 class AttendanceRepository {
-  AttendanceRepository(this._store, this._api);
+  final _localDataSource = AttendanceLocalDataSource();
+  final _remoteApi = GoogleSheetsApi();
+  final _supabase = Supabase.instance.client;
 
-  final AttendanceStore _store;
-  final GoogleSheetsApi _api;
+  // Save attendance with full SQLite support
+  Future<bool> saveAttendance(AttendanceRecord record) async {
+    try {
+      print('💾 Saving attendance record...');
 
-  StudentProfile? _profile;
-  List<AttendanceEvent> _events = [];
-  int _synced = 0;
-  Future<SyncResult>? _syncing;
+      // 1. Try saving to Supabase first if online
+      AttendanceRecord? supabaseRecord;
+      try {
+        final map = record.toMap();
+        if (record.id == null) {
+          map.remove('id');
+        }
+        
+        final response = await _supabase
+            .from('attendance')
+            .insert(map)
+            .select()
+            .single();
+        
+        supabaseRecord = AttendanceRecord.fromMap(response);
+        print('✅ Synced attendance record to Supabase');
+      } catch (e) {
+        print('⚠️ Supabase attendance insert error: $e');
+      }
 
-  StudentProfile? get profile => _profile;
-  List<AttendanceEvent> get events => List.unmodifiable(_events);
-  int get syncedCount => _synced;
-  int get pendingCount => _events.length - _synced;
-  bool get isIntact => firstBrokenLink(_events) == null;
+      final recordToSave = supabaseRecord ?? record;
 
-  Future<void> load() async {
-    _profile = await _store.loadProfile();
-    _events = await _store.loadEvents();
-    _synced = (await _store.loadSyncedCount()).clamp(0, _events.length);
-  }
+      // Save to SQLite database (primary storage)
+      await _localDataSource.saveToDatabase(recordToSave);
+      print('✅ Saved to SQLite database');
 
-  Future<void> enrol(StudentProfile profile) async {
-    if (_profile != null) throw StateError('Device is already enrolled');
-    await _store.saveProfile(profile);
-    _profile = profile;
-  }
+      // Backup to CSV (optional)
+      await _localDataSource.saveToCSV(recordToSave);
+      print('✅ Backed up to CSV');
 
-  /// The action that comes next today: sign in, then out, alternating.
-  AttendanceType nextType(DateTime now) {
-    final today = now.toLocal();
-    for (final e in _events.reversed) {
-      if (!e.decision.isAccepted) continue;
-      final t = e.time.toLocal();
-      final sameDay =
-          t.year == today.year && t.month == today.month && t.day == today.day;
-      return sameDay && e.type == AttendanceType.signIn
-          ? AttendanceType.signOut
-          : AttendanceType.signIn;
+      // Sync to Google Sheets (with proper error handling)
+      print('☁️ Syncing to Google Sheets...');
+      try {
+        final syncSuccess = await _remoteApi.syncRecord(recordToSave);
+        if (syncSuccess) {
+          print('✅ Successfully synced to Google Sheets');
+        } else {
+          print('⚠️ Google Sheets sync failed (returned false)');
+        }
+      } catch (syncError) {
+        print('⚠️ Google Sheets sync error: $syncError');
+        // Don't fail the entire save if remote sync fails
+      }
+
+      return true;
+    } catch (e) {
+      print('❌ Failed to save attendance: $e');
+      return false;
     }
-    return AttendanceType.signIn;
   }
 
-  /// Writes durably to disk before returning. Never touches the network.
-  Future<AttendanceEvent> record({
-    required AttendanceType type,
-    required Decision decision,
-    required DateTime at,
-    double? distanceM,
-    double? accuracyM,
-    int locationMs = 0,
-    int biometricMs = 0,
-  }) async {
-    final profile = _profile;
-    if (profile == null) throw StateError('Device is not enrolled');
-    final event = AttendanceEvent.create(
-      deviceId: profile.deviceId,
-      seq: _events.length,
-      studentId: profile.studentId,
-      name: profile.name,
-      type: type,
-      decision: decision,
-      at: at,
-      distanceM: distanceM,
-      accuracyM: accuracyM,
-      locationMs: locationMs,
-      biometricMs: biometricMs,
-      prevHash: _events.isEmpty
-          ? AttendanceEvent.genesisHash
-          : _events.last.hash,
-    );
-    await _store.append(event);
-    _events = [..._events, event];
-    return event;
-  }
-
-  /// Uploads pending events in order, stopping at the first failure. Concurrent
-  /// calls share one run.
-  Future<SyncResult> sync() =>
-      _syncing ??= _sync().whenComplete(() => _syncing = null);
-
-  Future<SyncResult> _sync() async {
-    if (!_api.isConfigured) return const SyncResult(SyncStatus.notConfigured);
-    while (_synced < _events.length) {
-      final result = await _api.send(_events[_synced]);
-      if (result.status != SyncStatus.ok) return result;
-      await _store.saveSyncedCount(_synced + 1);
-      _synced++;
+  // Get all attendance records
+  Future<List<AttendanceRecord>> getAllAttendance() async {
+    // Try Supabase first
+    try {
+      final List<dynamic> response = await _supabase
+          .from('attendance')
+          .select()
+          .order('timestamp', ascending: false);
+      
+      final records = response.map((item) => AttendanceRecord.fromMap(item as Map<String, dynamic>)).toList();
+      
+      // Update local cache
+      final dsHelper = _localDataSource;
+      await dsHelper.clearAllRecords();
+      for (var r in records) {
+        await dsHelper.saveToDatabase(r);
+      }
+      return records;
+    } catch (e) {
+      print('⚠️ Supabase fetch all attendance logs error: $e');
     }
-    return const SyncResult(SyncStatus.ok);
+
+    return await _localDataSource.getAllRecords();
+  }
+
+  // Get recent attendance records
+  Future<List<AttendanceRecord>> getRecentAttendance(int limit) async {
+    // Try Supabase first
+    try {
+      final List<dynamic> response = await _supabase
+          .from('attendance')
+          .select()
+          .order('timestamp', ascending: false)
+          .limit(limit);
+      
+      final records = response.map((item) => AttendanceRecord.fromMap(item as Map<String, dynamic>)).toList();
+      return records;
+    } catch (e) {
+      print('⚠️ Supabase fetch recent attendance logs error: $e');
+    }
+
+    return await _localDataSource.getRecentRecords(limit);
+  }
+
+  // Get attendance by venue
+  Future<List<AttendanceRecord>> getAttendanceByVenue(String venueName) async {
+    // Try Supabase first
+    try {
+      final List<dynamic> response = await _supabase
+          .from('attendance')
+          .select()
+          .eq('venueName', venueName)
+          .order('timestamp', ascending: false);
+      
+      final records = response.map((item) => AttendanceRecord.fromMap(item as Map<String, dynamic>)).toList();
+      return records;
+    } catch (e) {
+      print('⚠️ Supabase fetch attendance by venue error: $e');
+    }
+
+    return await _localDataSource.getRecordsByVenue(venueName);
+  }
+
+  // Get attendance by user
+  Future<List<AttendanceRecord>> getAttendanceByUser(String userName) async {
+    // Try Supabase first
+    try {
+      final List<dynamic> response = await _supabase
+          .from('attendance')
+          .select()
+          .eq('name', userName)
+          .order('timestamp', ascending: false);
+      
+      final records = response.map((item) => AttendanceRecord.fromMap(item as Map<String, dynamic>)).toList();
+      return records;
+    } catch (e) {
+      print('⚠️ Supabase fetch attendance by user error: $e');
+    }
+
+    return await _localDataSource.getRecordsByUser(userName);
+  }
+
+  // Get attendance by date range
+  Future<List<AttendanceRecord>> getAttendanceByDateRange(
+      DateTime start, DateTime end) async {
+    // Try Supabase first
+    try {
+      final List<dynamic> response = await _supabase
+          .from('attendance')
+          .select()
+          .gte('timestamp', start.toIso8601String())
+          .lte('timestamp', end.toIso8601String())
+          .order('timestamp', ascending: false);
+      
+      final records = response.map((item) => AttendanceRecord.fromMap(item as Map<String, dynamic>)).toList();
+      return records;
+    } catch (e) {
+      print('⚠️ Supabase fetch attendance by date range error: $e');
+    }
+
+    return await _localDataSource.getRecordsByDateRange(start, end);
+  }
+
+  // Get total count
+  Future<int> getTotalCount() async {
+    // Try Supabase first
+    try {
+      final response = await _supabase
+          .from('attendance')
+          .select('id')
+          .count(CountOption.exact);
+      
+      final count = response.count;
+      return count;
+    } catch (e) {
+      print('⚠️ Supabase fetch total attendance count error: $e');
+    }
+
+    return await _localDataSource.getTotalCount();
+  }
+
+  // Export to CSV
+  Future<String> exportToCSV() async {
+    return await _localDataSource.exportToCSV();
+  }
+
+  // Delete record
+  Future<void> deleteRecord(int id) async {
+    // Try deleting from Supabase
+    try {
+      await _supabase
+          .from('attendance')
+          .delete()
+          .eq('id', id);
+      print('✅ Deleted attendance log from Supabase: ID=$id');
+    } catch (e) {
+      print('⚠️ Supabase delete attendance log error: $e');
+    }
+
+    await _localDataSource.deleteRecord(id);
+  }
+
+  // Clear all records
+  Future<void> clearAllRecords() async {
+    // Try deleting all from Supabase
+    try {
+      await _supabase
+          .from('attendance')
+          .delete()
+          .neq('id', 0); // Deletes all records
+      print('✅ Cleared all attendance logs from Supabase');
+    } catch (e) {
+      print('⚠️ Supabase clear attendance logs error: $e');
+    }
+
+    await _localDataSource.clearAllRecords();
   }
 }

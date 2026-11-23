@@ -43,6 +43,3 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
-
-# Site configuration and tokens for --dart-define-from-file
-/config.json
