@@ -46,7 +46,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
         });
       }
     } catch (e) {
-      print('⚠️ Error checking timetable status: $e');
+      debugPrint('⚠️ Error checking timetable status: $e');
     }
   }
 
@@ -114,9 +114,9 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
                     Container(
                       padding: const EdgeInsets.all(AppSpace.md),
                       decoration: BoxDecoration(
-                        color: theme.colorScheme.primary.withOpacity(0.1),
+                        color: theme.colorScheme.primary.withValues(alpha: 0.1),
                         borderRadius: AppRadius.mdR,
-                        border: Border.all(color: theme.colorScheme.primary.withOpacity(0.15), width: 1),
+                        border: Border.all(color: theme.colorScheme.primary.withValues(alpha: 0.15), width: 1),
                       ),
                       child: Icon(Icons.school_rounded, color: theme.colorScheme.primary, size: 28),
                     ),
@@ -247,8 +247,8 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
               color: AppColors.success,
               onTap: () async {
                 final currentVenue = await _venueFuture;
-                if (!mounted) return;
-                
+                if (!context.mounted) return;
+
                 final savedVenue = await Navigator.of(context).push<Venue>(
                   MaterialPageRoute(
                     builder: (context) => VenueEditorScreen(venue: currentVenue),
@@ -328,9 +328,9 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
         leading: Container(
           padding: const EdgeInsets.all(AppSpace.md),
           decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
+            color: color.withValues(alpha: 0.1),
             borderRadius: AppRadius.mdR,
-            border: Border.all(color: color.withOpacity(0.15), width: 1),
+            border: Border.all(color: color.withValues(alpha: 0.15), width: 1),
           ),
           child: Icon(icon, color: color, size: 24),
         ),
@@ -350,7 +350,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
         trailing: Container(
           padding: const EdgeInsets.all(6),
           decoration: BoxDecoration(
-            color: isDark ? Colors.white.withOpacity(0.04) : AppColors.slate100,
+            color: isDark ? Colors.white.withValues(alpha: 0.04) : AppColors.slate100,
             shape: BoxShape.circle,
           ),
           child: Icon(Icons.arrow_forward_ios_rounded, size: 12, color: color),
@@ -367,12 +367,12 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
       builder: (context, snapshot) {
         if (_currentCourse.venueId == null) {
           return Container(
-            color: AppColors.slate400.withOpacity(0.06),
+            color: AppColors.slate400.withValues(alpha: 0.06),
             child: Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.location_off_rounded, color: AppColors.slate400, size: 36),
+                  const Icon(Icons.location_off_rounded, color: AppColors.slate400, size: 36),
                   const SizedBox(height: AppSpace.sm),
                   Text(
                     'No geofenced venue set for this course',
@@ -388,7 +388,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
         }
         if (!snapshot.hasData || snapshot.data == null) {
           return Container(
-            color: AppColors.slate400.withOpacity(0.06),
+            color: AppColors.slate400.withValues(alpha: 0.06),
             child: Center(
               child: Text('Venue details not found', style: AppType.body(context, color: AppColors.slate500)),
             ),
@@ -417,7 +417,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
                     circleId: CircleId(venue.id.toString()),
                     center: center,
                     radius: venue.radius,
-                    fillColor: theme.colorScheme.primary.withOpacity(0.12),
+                    fillColor: theme.colorScheme.primary.withValues(alpha: 0.12),
                     strokeColor: theme.colorScheme.primary,
                     strokeWidth: 2,
                   )
@@ -429,7 +429,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
                     points: venue.polygonCorners!
                         .map((c) => LatLng(c.latitude, c.longitude))
                         .toList(),
-                    fillColor: theme.colorScheme.primary.withOpacity(0.12),
+                    fillColor: theme.colorScheme.primary.withValues(alpha: 0.12),
                     strokeColor: theme.colorScheme.primary,
                     strokeWidth: 2,
                   )

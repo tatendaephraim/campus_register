@@ -1,7 +1,4 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:device_info_plus/device_info_plus.dart';
-import 'package:geolocator/geolocator.dart';
 
 import 'course.dart';
 import 'timetable.dart';
@@ -10,8 +7,8 @@ import 'teacher_repository.dart';
 import 'timetable_constraints_repository.dart';
 import 'live_attendance_screen.dart';
 import 'venue_repository.dart';
-import 'venue.dart' as app_models;
-import 'location_service.dart';
+import 'services/volumetric_verifier.dart';
+import 'services/device_identity.dart';
 import 'ui/design_tokens.dart';
 
 class SetTimetableScreen extends StatefulWidget {
@@ -64,7 +61,7 @@ class _SetTimetableScreenState extends State<SetTimetableScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   DropdownButtonFormField<int>(
-                    value: dayOfWeek,
+                    initialValue: dayOfWeek,
                     items: const [
                       DropdownMenuItem(value: 1, child: Text('Monday')),
                       DropdownMenuItem(value: 2, child: Text('Tuesday')),
@@ -193,6 +190,7 @@ class _SetTimetableScreenState extends State<SetTimetableScreen> {
                             return; // Keep dialog open
                           }
 
+                          if (!context.mounted) return;
                           if (widget.course.venueId != null) {
                             showDialog(
                               context: context,
@@ -283,7 +281,7 @@ class _SetTimetableScreenState extends State<SetTimetableScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.calendar_month_outlined, size: 56, color: AppColors.slate400),
+                      const Icon(Icons.calendar_month_outlined, size: 56, color: AppColors.slate400),
                       const SizedBox(height: AppSpace.lg),
                       Text(
                         'No class times set yet',
@@ -322,17 +320,17 @@ class _SetTimetableScreenState extends State<SetTimetableScreen> {
                   shape: RoundedRectangleBorder(
                     borderRadius: AppRadius.lgR,
                     side: BorderSide(
-                      color: isToday ? theme.colorScheme.primary.withOpacity(0.4) : AppColors.border(isDark),
+                      color: isToday ? theme.colorScheme.primary.withValues(alpha: 0.4) : AppColors.border(isDark),
                       width: isToday ? 1.5 : 1,
                     ),
                   ),
-                  color: isToday ? theme.colorScheme.primary.withOpacity(isDark ? 0.12 : 0.06) : null,
+                  color: isToday ? theme.colorScheme.primary.withValues(alpha: isDark ? 0.12 : 0.06) : null,
                   child: ListTile(
                     contentPadding: const EdgeInsets.symmetric(horizontal: AppSpace.lg, vertical: AppSpace.xs),
                     leading: Container(
                       padding: const EdgeInsets.all(AppSpace.sm + 2),
                       decoration: BoxDecoration(
-                        color: theme.colorScheme.primary.withOpacity(0.1),
+                        color: theme.colorScheme.primary.withValues(alpha: 0.1),
                         borderRadius: AppRadius.smR,
                       ),
                       child: Icon(Icons.schedule_rounded, color: theme.colorScheme.primary, size: 20),
@@ -365,17 +363,7 @@ class _SetTimetableScreenState extends State<SetTimetableScreen> {
 
                             if (teacher != null && teacher.role != 'admin') {
                               // 1. Device ID check
-                              String? currentDeviceId;
-                              try {
-                                final deviceInfo = DeviceInfoPlugin();
-                                if (Platform.isAndroid) {
-                                  final androidInfo = await deviceInfo.androidInfo;
-                                  currentDeviceId = androidInfo.id;
-                                } else if (Platform.isIOS) {
-                                  final iosInfo = await deviceInfo.iosInfo;
-                                  currentDeviceId = iosInfo.identifierForVendor;
-                                }
-                              } catch (_) {}
+                              final currentDeviceId = await DeviceIdentity.current();
 
                               if (currentDeviceId != null && teacher.deviceAppId != null && teacher.deviceAppId != currentDeviceId) {
                                 if (context.mounted) {
@@ -396,16 +384,13 @@ class _SetTimetableScreenState extends State<SetTimetableScreen> {
                               // 2. Geofence presence check
                               if (widget.course.venueId != null) {
                                 final venue = await VenueRepository().getVenueById(widget.course.venueId!);
-                                if (venue != null && venue.hasPolygon) {
+                                {
                                   bool isInside = false;
+                                  String failure = '';
                                   try {
-                                    final locationService = LocationService();
-                                    final position = await locationService.getCurrentPositionWithPermissions();
-                                    isInside = locationService.isPointInPolygon(
-                                      position.latitude,
-                                      position.longitude,
-                                      venue.polygonCorners!,
-                                    );
+                                    final reading = await VolumetricVerifier().verify(venue, source: 'start-class');
+                                    isInside = reading.result.decision.isInside;
+                                    failure = reading.result.decision.message;
                                   } catch (e) {
                                     if (context.mounted) {
                                       showDialog(
@@ -428,7 +413,7 @@ class _SetTimetableScreenState extends State<SetTimetableScreen> {
                                         context: context,
                                         builder: (context) => AlertDialog(
                                           title: const Text('Geofence Verification Failed'),
-                                          content: Text('You must be physically present inside the venue "${venue.name}" to start class attendance.'),
+                                          content: Text('You must be physically present inside the venue "${venue?.name ?? 'for this class'}" to start class attendance. $failure'),
                                           actions: [
                                             TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK')),
                                           ],

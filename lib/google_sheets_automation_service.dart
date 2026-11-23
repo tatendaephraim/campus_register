@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:googleapis/script/v1.dart' as script;
@@ -64,7 +65,7 @@ class GoogleSheetsAutomationService {
         ..mimeType = 'application/vnd.google-apps.spreadsheet';
 
       final newSheet = await driveApi.files.create(sheetFile);
-      print('✅ Google Sheet created: ${newSheet.id}');
+      debugPrint('✅ Google Sheet created: ${newSheet.id}');
 
       // 3. Create the Google Apps Script project bound to the sheet
       final createScriptRequest = script.CreateProjectRequest()
@@ -73,7 +74,7 @@ class GoogleSheetsAutomationService {
 
       final scriptProject =
           await scriptApi.projects.create(createScriptRequest);
-      print('✅ Apps Script project created: ${scriptProject.scriptId}');
+      debugPrint('✅ Apps Script project created: ${scriptProject.scriptId}');
 
       // 4. Update the script with our code
       final content = script.Content()
@@ -94,11 +95,11 @@ class GoogleSheetsAutomationService {
       final deployment = await scriptApi.projects.deployments
           .create(deploymentConfig, scriptProject.scriptId!);
 
-      print(
+      debugPrint(
           '✅ Script deployed. URL: ${deployment.entryPoints![0].webApp!.url}');
       return deployment.entryPoints![0].webApp!.url;
     } catch (e) {
-      print('❌ Automation failed: $e');
+      debugPrint('❌ Automation failed: $e');
       return null;
     }
   }

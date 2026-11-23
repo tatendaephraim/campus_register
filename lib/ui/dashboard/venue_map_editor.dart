@@ -350,7 +350,7 @@ class _VenueMapEditorState extends State<VenueMapEditor> {
                 .toList(),
             strokeColor: Colors.blue,
             strokeWidth: 3,
-            fillColor: Colors.blue.withOpacity(0.2),
+            fillColor: Colors.blue.withValues(alpha: 0.2),
           ),
         );
       }
@@ -363,7 +363,7 @@ class _VenueMapEditorState extends State<VenueMapEditor> {
           radius: _radius,
           strokeColor: Colors.green,
           strokeWidth: 2,
-          fillColor: Colors.green.withOpacity(0.2),
+          fillColor: Colors.green.withValues(alpha: 0.2),
         ),
       );
     }

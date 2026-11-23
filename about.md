@@ -1,6 +1,6 @@
 # Campus Register 📱🎓
 
-**Campus Register** is a mobile-first, offline-ready classroom attendance management system built using Flutter. It is designed to secure academic integrity by preventing attendance fraud (e.g., location spoofing, "buddy checking") through a combination of **3D Volumetric Geofencing**, **Biometric Verification**, and **Scheduled Time-Window Locking**. It operates under an offline-first paradigm, caching data in a local SQLite database and syncing in real-time to **Supabase Postgres** and **Google Sheets**.
+**Campus Register** is a mobile-first, offline-ready classroom attendance management system built using Flutter. It is designed to support academic integrity by making attendance fraud harder (e.g., location spoofing, "buddy checking") through a combination of **3D Volumetric Geofencing**, **Biometric Verification**, and **Scheduled Time-Window Locking**. It operates under an offline-first paradigm, caching data in a local SQLite database and syncing in real-time to **Supabase Postgres** and **Google Sheets**.
 
 ---
 
@@ -9,9 +9,9 @@
 ### 1. 3D Volumetric Geofencing
 To prevent attendance spoofing from nearby buildings or incorrect classroom floors, the system employs 3D geofencing:
 *   **2D Horizontal Polygon Mapping:** Classroom boundaries are drawn as polygons on a map using Google Maps. The device's current location must fall inside this polygon (validated using a Ray-Casting algorithm).
-*   **Altitude Verification (Vertical Gatekeeper):** The system records the classroom's physical floor height (altitude in meters). A student's device altitude is compared with this baseline. Sign-in is blocked if:
-    *   The student is underground (`altitude < baseline - 2.0m`).
-    *   The student is on a different floor (`altitude > baseline + 5.0m`).
+*   **Altitude Verification (Vertical Gatekeeper):** The system records the classroom's floor altitude. A student's altitude, fused from GPS and the barometer, is compared with it. Sign-in is refused if:
+    *   The student is clearly below the band (default `baseline - 8 m`).
+    *   The student is clearly above the band (default `baseline + 12 m`, adjustable per venue).
 
 ### 2. Biometric Identity Verification
 *   **Anti-Buddy Check-In:** Prevents students from signing in for absent classmates.
@@ -47,7 +47,7 @@ To prevent attendance spoofing from nearby buildings or incorrect classroom floo
 *   **Integrations:** 
     *   Google Maps API (for polygon drawing and classroom visualizations)
     *   Google Sheets API (for spreadsheet sync automation)
-    *   Device Info API (to pair student profiles securely with a unique hardware ID)
+    *   Android ID and iOS vendor ID (to pair student profiles with a phone)
     *   Biometrics API (via `local_auth` for fingerprint validation)
 
 ---
@@ -105,7 +105,7 @@ erDiagram
         int id PK
         int course_id FK
         string name
-        string device_app_id UK
+        string device_app_id
     }
 
     ATTENDANCE_RECORDS {
@@ -132,17 +132,17 @@ erDiagram
 3.  **Volumetric Geofence Editor:**
     *   Open Google Maps within the app.
     *   Tap on the map to define the polygon corners of the classroom.
-    *   Tap **Capture Altitude** while physically in the room to record the floor's baseline altitude.
+    *   Tap **Capture floor** while physically in the room to record the floor's baseline altitude.
 4.  **Timetable Planning:** Set scheduled classes (day of week, start/end times).
 5.  **Google Sheet Linking:** Provide a Google Sheet URL where attendance will auto-populate.
 
 ### B. The Student Flow
-1.  **Device Pairing:** Upon opening the app for the first time, it registers the device's hardware ID. The student provides their name and selects their enrolled course.
+1.  **Device Pairing:** The student enters the one-time code issued by staff, which binds the profile to the phone.
 2.  **Dashboard Check-In:**
     *   The app periodically polls to see if there is an active class slot for their enrolled course.
     *   When active, the student taps **Scan & Check In**.
 3.  **Verification Steps:**
     *   *Step 1:* Verifies device GPS is within the classroom polygon.
-    *   *Step 2:* Verifies altitude matches the classroom floor height.
-    *   *Step 3:* Prompts for a biometric fingerprint scan.
+    *   *Step 2:* Verifies that the height is inside the venue's band.
+    *   *Step 3:* Prompts for a fingerprint or face match. A PIN is not accepted.
 4.  **Completion:** The record is saved locally, synchronized with Supabase, and pushed to the teacher's Google Sheet.

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 /// A service class to handle Google Sign-In authentication.
@@ -21,7 +22,7 @@ class GoogleAuthService {
     try {
       return await _googleSignIn.signIn();
     } catch (error) {
-      print("Google Sign-In Error: $error");
+      debugPrint("Google Sign-In Error: $error");
       return null;
     }
   }

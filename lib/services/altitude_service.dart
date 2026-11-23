@@ -1,53 +1,65 @@
 import 'dart:async';
-import 'dart:math';
+
+import 'package:flutter/foundation.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 
+import '../domain/altitude_filter.dart' as filter;
+
+/// Feeds the barometer and GPS altitude into one shared altitude filter.
 class AltitudeService {
-  // Make this a singleton so that the barometer stream subscription is shared.
-  AltitudeService._privateConstructor() {
-    _initBarometer();
-  }
-  static final AltitudeService instance = AltitudeService._privateConstructor();
+  AltitudeService._();
+  static final AltitudeService instance = AltitudeService._();
 
-  static const double seaLevelPressure = 1013.25;
+  final filter.AltitudeFilter _filter = filter.AltitudeFilter();
+  StreamSubscription<BarometerEvent>? _subscription;
   double? _latestPressure;
-  StreamSubscription<BarometerEvent>? _barometerSubscription;
 
-  void _initBarometer() {
+  double? get latestPressure => _latestPressure;
+  filter.AltitudeEstimate? get estimate => _filter.estimate;
+
+  /// Starts listening. Safe to call repeatedly, and on phones that have no
+  /// barometer, where the filter falls back to GPS alone.
+  void start() {
+    if (_subscription != null) return;
     try {
-      _barometerSubscription = barometerEventStream().listen((event) {
-        _latestPressure = event.pressure;
-      }, onError: (e) {
-        print("Barometer not supported or error: $e");
-      });
+      _subscription =
+          barometerEventStream(
+            samplingPeriod: SensorInterval.uiInterval,
+          ).listen(
+            (event) {
+              _latestPressure = event.pressure;
+              _filter.addPressure(event.pressure, DateTime.now());
+            },
+            onError: (Object e) => debugPrint('Barometer unavailable: $e'),
+            cancelOnError: true,
+          );
     } catch (e) {
-      print("Failed to initialize barometer stream: $e");
+      debugPrint('Barometer unavailable: $e');
     }
   }
 
-  void dispose() {
-    _barometerSubscription?.cancel();
-    _barometerSubscription = null;
+  void stop() {
+    _subscription?.cancel();
+    _subscription = null;
   }
 
-  /// Converts Hectopascals (hPa) to Altitude in Meters
-  /// Uses the International Barometric Formula
-  double pressureToAltitude(double pressureHpa) {
-    if (pressureHpa <= 0) return 0.0;
-    return 44330.0 * (1.0 - pow(pressureHpa / seaLevelPressure, 1.0 / 5.255));
-  }
+  /// [sigma] is the vertical accuracy the phone reported, if any.
+  void addGnss(double altitude, double? sigma) =>
+      _filter.addGnss(altitude, sigma, DateTime.now());
 
-  /// Gets the combined altitude using both Barometer (if available) and GPS.
-  double getCombinedAltitude(double gpsAltitude) {
-    // Bypassing barometric pressure averaging to avoid uncalibrated drift anomalies.
-    print("Altitude Debug: GPS Only (barometer bypassed)=$gpsAltitude m");
-    return gpsAltitude;
-  }
+  void reset() => _filter.reset();
 
-  /// Calculates the estimated floor number
+  /// Converts pressure (hPa) to altitude above the standard sea level.
+  double pressureToAltitude(double pressureHpa) =>
+      filter.pressureToAltitude(pressureHpa);
+
+  /// Storeys above a ground altitude, never below the ground floor.
   int calculateFloor(double currentAlt, double groundAlt) {
-    double heightAboveGround = currentAlt - groundAlt;
-    int floor = (heightAboveGround / 3.5).floor();
+    final floor = ((currentAlt - groundAlt) / 3.5).floor();
     return floor < 0 ? 0 : floor;
   }
+
+  /// Floors above (or below, if negative) the venue's own floor.
+  int floorOffset(double altitude, double venueAltitude) =>
+      ((altitude - venueAltitude) / 3.5).round();
 }

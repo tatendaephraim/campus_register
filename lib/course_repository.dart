@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -31,10 +32,10 @@ class CourseRepository {
           .single();
       
       supabaseCourse = Course.fromMap(response);
-      print('✅ Synced Course to Supabase: ${supabaseCourse.name}');
+      debugPrint('✅ Synced Course to Supabase: ${supabaseCourse.name}');
     } on PostgrestException catch (e) {
       if (e.message.contains('courses_venue_id_fkey')) {
-        print('⚠️ Course venue missing in cloud. Attempting to sync venue first...');
+        debugPrint('⚠️ Course venue missing in cloud. Attempting to sync venue first...');
         try {
           final venueId = course.venueId;
           if (venueId != null) {
@@ -43,12 +44,12 @@ class CourseRepository {
             if (localVenue != null) {
                // Push venue to cloud
                await _supabase.from('venues').upsert(localVenue.toMap());
-               print('✅ Auto-synced missing course venue: ${localVenue.name}');
+               debugPrint('✅ Auto-synced missing course venue: ${localVenue.name}');
 
                // Re-attempt original course sync
                final retryResponse = await _supabase.from('courses').insert(map).select().single();
                supabaseCourse = Course.fromMap(retryResponse);
-               print('✅ Course synced successfully after venue repair.');
+               debugPrint('✅ Course synced successfully after venue repair.');
                return supabaseCourse;
             }
           }
@@ -58,13 +59,13 @@ class CourseRepository {
           final fallbackResponse = await _supabase.from('courses').insert(map).select().single();
           supabaseCourse = Course.fromMap(fallbackResponse);
         } catch (innerE) {
-          print('⚠️ Failed course-venue-first repair sync: $innerE');
+          debugPrint('⚠️ Failed course-venue-first repair sync: $innerE');
         }
       } else {
-        print('⚠️ Supabase Course insert error: $e');
+        debugPrint('⚠️ Supabase Course insert error: $e');
       }
     } catch (e) {
-      print('⚠️ Supabase Course insert error: $e');
+      debugPrint('⚠️ Supabase Course insert error: $e');
     }
 
     // 2. Save locally (using Supabase-generated ID if available)
@@ -92,9 +93,9 @@ class CourseRepository {
           .from('courses')
           .update(course.toMap())
           .eq('id', course.id!);
-      print('✅ Updated Course on Supabase: ${course.name}');
+      debugPrint('✅ Updated Course on Supabase: ${course.name}');
     } catch (e) {
-      print('⚠️ Supabase Course update error: $e');
+      debugPrint('⚠️ Supabase Course update error: $e');
     }
 
     // 2. Update locally
@@ -128,7 +129,7 @@ class CourseRepository {
         return course;
       }
     } catch (e) {
-      print('⚠️ Supabase fetch course error: $e');
+      debugPrint('⚠️ Supabase fetch course error: $e');
     }
 
     // Fallback to SQLite
@@ -168,7 +169,7 @@ class CourseRepository {
 
       return courses;
     } catch (e) {
-      print('⚠️ Supabase fetch courses error: $e');
+      debugPrint('⚠️ Supabase fetch courses error: $e');
     }
 
     // Fallback to SQLite
@@ -202,7 +203,7 @@ class CourseRepository {
 
       return courses;
     } catch (e) {
-      print('⚠️ Supabase fetch all courses error: $e');
+      debugPrint('⚠️ Supabase fetch all courses error: $e');
     }
 
     // Fallback to SQLite

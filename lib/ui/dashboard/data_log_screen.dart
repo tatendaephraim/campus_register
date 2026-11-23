@@ -455,6 +455,7 @@ class _DataLogScreenState extends State<DataLogScreen> {
 
     if (confirm == true && mounted) {
       await _repository.deleteRecord(record.id!);
+      if (!mounted) return;
       _loadRecords();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Record deleted')),
@@ -486,6 +487,7 @@ class _DataLogScreenState extends State<DataLogScreen> {
 
     if (confirm == true && mounted) {
       await _repository.clearAllRecords();
+      if (!mounted) return;
       _loadRecords();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('All records cleared')),

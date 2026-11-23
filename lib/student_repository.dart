@@ -1,9 +1,19 @@
+import 'package:flutter/foundation.dart';
 import 'dart:math';
 import 'package:sqflite/sqflite.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'database_helper.dart';
 import 'student.dart';
+
+/// Thrown when a phone already belongs to a different student.
+class DeviceAlreadyBoundException implements Exception {
+  const DeviceAlreadyBoundException();
+
+  @override
+  String toString() =>
+      'This phone is already registered to another student.';
+}
 
 /// Repository for handling data operations for the [Student] model.
 class StudentRepository {
@@ -32,7 +42,7 @@ class StudentRepository {
 
       return students;
     } catch (e) {
-      print('⚠️ Supabase fetch students for course error: $e');
+      debugPrint('⚠️ Supabase fetch students for course error: $e');
     }
 
     // Fallback to SQLite using JOIN
@@ -52,7 +62,7 @@ class StudentRepository {
   /// Adds a new student to a course with a unique registration code.
   Future<Student> addStudent(String name, int courseId) async {
     final db = await dbHelper.database;
-    final registrationCode = (100000 + Random().nextInt(900000)).toString();
+    final registrationCode = (100000 + Random.secure().nextInt(900000)).toString();
 
     // Find the organization from the course's teacher
     int? organizationId;
@@ -98,12 +108,12 @@ class StudentRepository {
           .single();
       
       supabaseStudent = Student.fromMap(response);
-      print('✅ Synced Student to Supabase: ${supabaseStudent.name}');
+      debugPrint('✅ Synced Student to Supabase: ${supabaseStudent.name}');
     } on PostgrestException catch (e) {
-      print('⚠️ Supabase Student add error: $e');
+      debugPrint('⚠️ Supabase Student add error: $e');
       rethrow;
     } catch (e) {
-      print('⚠️ Supabase Student add connection/offline error: $e');
+      debugPrint('⚠️ Supabase Student add connection/offline error: $e');
     }
 
     // 2. Save locally
@@ -129,6 +139,18 @@ class StudentRepository {
       String registrationCode, String newDeviceAppId) async {
     final db = await dbHelper.database;
 
+    // A phone may hold several course profiles of one student, but never two
+    // different students.
+    final bound = await getStudentsByDeviceId(newDeviceAppId);
+    String normal(String name) =>
+        name.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+    void ensureSamePerson(Student candidate) {
+      if (bound.any((s) =>
+          s.id != candidate.id && normal(s.name) != normal(candidate.name))) {
+        throw const DeviceAlreadyBoundException();
+      }
+    }
+
     // 1. Try resolving and updating on Supabase first if online
     Student? supabaseUpdatedStudent;
     try {
@@ -141,7 +163,8 @@ class StudentRepository {
       if (response.isNotEmpty) {
         final studentMap = response.first as Map<String, dynamic>;
         final student = Student.fromMap(studentMap);
-        
+        ensureSamePerson(student);
+
         final updatedMap = {
           'id': student.id,
           'name': student.name,
@@ -157,10 +180,12 @@ class StudentRepository {
             .timeout(const Duration(seconds: 8));
         
         supabaseUpdatedStudent = Student.fromMap(updateResponse);
-        print('✅ Registered device on Supabase for student: ${supabaseUpdatedStudent.name}');
+        debugPrint('✅ Registered device on Supabase for student: ${supabaseUpdatedStudent.name}');
       }
+    } on DeviceAlreadyBoundException {
+      rethrow;
     } catch (e) {
-      print('⚠️ Supabase registerDevice error: $e');
+      debugPrint('⚠️ Supabase registerDevice error: $e');
     }
 
     // 2. Save/Update locally
@@ -174,11 +199,15 @@ class StudentRepository {
 
       if (maps.isNotEmpty) {
         final student = Student.fromMap(maps.first);
+        ensureSamePerson(student);
         final updatedStudent = supabaseUpdatedStudent ?? Student(
           id: student.id,
           courseId: student.courseId,
+          organizationId: student.organizationId,
           name: student.name,
+          email: student.email,
           deviceAppId: newDeviceAppId,
+          isApproved: student.isApproved,
         );
 
         if (supabaseUpdatedStudent != null) {
@@ -219,8 +248,10 @@ class StudentRepository {
         );
         return supabaseUpdatedStudent;
       }
+    } on DeviceAlreadyBoundException {
+      rethrow;
     } catch (e) {
-      print('⚠️ Local database registerDevice error: $e');
+      debugPrint('⚠️ Local database registerDevice error: $e');
     }
     return null;
   }
@@ -238,13 +269,16 @@ class StudentRepository {
 
       final db = await dbHelper.database;
       final batch = db.batch();
+      // The server answered, so local profiles it no longer lists were released.
+      batch.delete('students',
+          where: 'device_app_id = ?', whereArgs: [deviceId]);
       for (var student in students) {
         final map = student.toMap();
         batch.insert('students', map, conflictAlgorithm: ConflictAlgorithm.replace);
       }
       await batch.commit(noResult: true);
     } catch (e) {
-      print('⚠️ Supabase getStudentsByDeviceId error: $e');
+      debugPrint('⚠️ Supabase getStudentsByDeviceId error: $e');
     }
 
     // Fallback to SQLite
@@ -257,7 +291,7 @@ class StudentRepository {
       );
       return List.generate(maps.length, (i) => Student.fromMap(maps[i]));
     } catch (e) {
-      print('⚠️ SQLite getStudentsByDeviceId error: $e');
+      debugPrint('⚠️ SQLite getStudentsByDeviceId error: $e');
     }
     return [];
   }
@@ -285,8 +319,13 @@ class StudentRepository {
         );
         return Student.fromMap(map);
       }
+      // The server answered, so a local profile it no longer lists was released.
+      final db = await dbHelper.database;
+      await db.delete('students',
+          where: 'device_app_id = ?', whereArgs: [deviceId]);
+      return null;
     } catch (e) {
-      print('⚠️ Supabase fetch student by deviceId error: $e');
+      debugPrint('⚠️ Supabase fetch student by deviceId error: $e');
     }
 
     // Fallback to SQLite
@@ -302,7 +341,7 @@ class StudentRepository {
         return Student.fromMap(maps.first);
       }
     } catch (e) {
-      print('⚠️ SQLite getStudentByDeviceId error: $e');
+      debugPrint('⚠️ SQLite getStudentByDeviceId error: $e');
     }
     return null;
   }
@@ -328,7 +367,7 @@ class StudentRepository {
 
       return students;
     } catch (e) {
-      print('⚠️ Supabase fetch all students error: $e');
+      debugPrint('⚠️ Supabase fetch all students error: $e');
     }
 
     // Fallback to SQLite
@@ -347,9 +386,9 @@ class StudentRepository {
           .from('students')
           .update({'name': student.name})
           .eq('id', student.id!);
-      print('✅ Updated student in Supabase: ${student.name}');
+      debugPrint('✅ Updated student in Supabase: ${student.name}');
     } catch (e) {
-      print('⚠️ Supabase Student update error: $e');
+      debugPrint('⚠️ Supabase Student update error: $e');
     }
 
     // 2. Update locally
@@ -379,9 +418,9 @@ class StudentRepository {
           .delete()
           .eq('id', studentId);
       
-      print('✅ Deleted student and attendance records in Supabase: ID=$studentId');
+      debugPrint('✅ Deleted student and attendance records in Supabase: ID=$studentId');
     } catch (e) {
-      print('⚠️ Supabase Student delete error: $e');
+      debugPrint('⚠️ Supabase Student delete error: $e');
     }
 
     // 2. Delete locally
@@ -399,6 +438,22 @@ class StudentRepository {
     });
   }
 
+  /// Releases one student's phone and returns a new registration code. Unlike
+  /// [unbindDevice] this is for staff, and reports failure instead of leaving
+  /// the phone and the server disagreeing.
+  Future<String> resetDevice(int studentId) async {
+    final code = (100000 + Random.secure().nextInt(900000)).toString();
+    await _supabase
+        .from('students')
+        .update({'device_app_id': code})
+        .eq('id', studentId)
+        .timeout(const Duration(seconds: 8));
+    final db = await dbHelper.database;
+    await db.update('students', {'device_app_id': code},
+        where: 'id = ?', whereArgs: [studentId]);
+    return code;
+  }
+
   /// Unbinds a device ID from all student profiles, resetting their codes.
   Future<void> unbindDevice(String deviceId) async {
     final db = await dbHelper.database;
@@ -412,15 +467,15 @@ class StudentRepository {
       
       for (var item in response) {
         final studentId = item['id'] as int;
-        final resetCode = (100000 + Random().nextInt(900000)).toString();
+        final resetCode = (100000 + Random.secure().nextInt(900000)).toString();
         await _supabase
             .from('students')
             .update({'device_app_id': resetCode})
             .eq('id', studentId);
       }
-      print('✅ Unbound device in Supabase for device: $deviceId');
+      debugPrint('✅ Unbound device in Supabase for device: $deviceId');
     } catch (e) {
-      print('⚠️ Supabase unbindDevice error: $e');
+      debugPrint('⚠️ Supabase unbindDevice error: $e');
     }
 
     // 2. Locally, reset the device_app_id back to a random code
@@ -432,7 +487,7 @@ class StudentRepository {
       );
       for (var map in maps) {
         final id = map['id'] as int;
-        final resetCode = (100000 + Random().nextInt(900000)).toString();
+        final resetCode = (100000 + Random.secure().nextInt(900000)).toString();
         await db.update(
           'students',
           {'device_app_id': resetCode},
@@ -441,7 +496,7 @@ class StudentRepository {
         );
       }
     } catch (e) {
-      print('⚠️ Local database unbindDevice error: $e');
+      debugPrint('⚠️ Local database unbindDevice error: $e');
     }
   }
 
@@ -457,7 +512,7 @@ class StudentRepository {
           .timeout(const Duration(seconds: 8));
       return response.map((item) => Student.fromMap(item as Map<String, dynamic>)).toList();
     } catch (e) {
-      print('⚠️ Supabase fetch pending students error: $e');
+      debugPrint('⚠️ Supabase fetch pending students error: $e');
     }
 
     final db = await dbHelper.database;
@@ -482,7 +537,7 @@ class StudentRepository {
           .timeout(const Duration(seconds: 8));
       return response.map((item) => Student.fromMap(item as Map<String, dynamic>)).toList();
     } catch (e) {
-      print('⚠️ Supabase fetch approved students error: $e');
+      debugPrint('⚠️ Supabase fetch approved students error: $e');
     }
 
     final db = await dbHelper.database;
@@ -502,9 +557,9 @@ class StudentRepository {
           .from('students')
           .update({'is_approved': 1})
           .eq('id', studentId);
-      print('✅ Approved student $studentId on Supabase');
+      debugPrint('✅ Approved student $studentId on Supabase');
     } catch (e) {
-      print('⚠️ Supabase approve student error: $e');
+      debugPrint('⚠️ Supabase approve student error: $e');
     }
 
     final db = await dbHelper.database;
@@ -523,9 +578,9 @@ class StudentRepository {
           .from('students')
           .update({'is_approved': 0})
           .eq('id', studentId);
-      print('✅ Suspended student $studentId on Supabase');
+      debugPrint('✅ Suspended student $studentId on Supabase');
     } catch (e) {
-      print('⚠️ Supabase suspendStudent error: $e');
+      debugPrint('⚠️ Supabase suspendStudent error: $e');
     }
 
     final db = await dbHelper.database;
@@ -541,9 +596,9 @@ class StudentRepository {
   Future<void> rejectStudent(int studentId) async {
     try {
       await _supabase.from('students').delete().eq('id', studentId);
-      print('✅ Rejected and deleted student $studentId from Supabase');
+      debugPrint('✅ Rejected and deleted student $studentId from Supabase');
     } catch (e) {
-      print('⚠️ Supabase reject student error: $e');
+      debugPrint('⚠️ Supabase reject student error: $e');
     }
 
     final db = await dbHelper.database;
@@ -560,9 +615,9 @@ class StudentRepository {
       await _supabase
           .from('course_students')
           .insert({'course_id': courseId, 'student_id': studentId});
-      print('✅ Enrolled student $studentId in course $courseId on Supabase');
+      debugPrint('✅ Enrolled student $studentId in course $courseId on Supabase');
     } catch (e) {
-      print('⚠️ Supabase enroll student in course error: $e');
+      debugPrint('⚠️ Supabase enroll student in course error: $e');
     }
 
     final db = await dbHelper.database;
@@ -599,12 +654,12 @@ class StudentRepository {
           .single();
       
       supabaseStudent = Student.fromMap(response);
-      print('✅ Synced Student to Supabase: ${supabaseStudent.name}');
+      debugPrint('✅ Synced Student to Supabase: ${supabaseStudent.name}');
     } on PostgrestException catch (e) {
-      print('⚠️ Supabase Student add to organization error: $e');
+      debugPrint('⚠️ Supabase Student add to organization error: $e');
       rethrow;
     } catch (e) {
-      print('⚠️ Supabase Student add to organization connection/offline error: $e');
+      debugPrint('⚠️ Supabase Student add to organization connection/offline error: $e');
     }
 
     // 2. Save locally
@@ -645,7 +700,7 @@ class StudentRepository {
       final List<dynamic> response = await query.order('name');
       return response.map((item) => Student.fromMap(item as Map<String, dynamic>)).toList();
     } catch (e) {
-      print('⚠️ Supabase fetch unenrolled students error: $e');
+      debugPrint('⚠️ Supabase fetch unenrolled students error: $e');
     }
 
     // Fallback to SQLite using NOT IN
@@ -677,7 +732,7 @@ class StudentRepository {
         return response['course_id'] as int;
       }
     } catch (e) {
-      print('⚠️ Supabase getEnrolledCourseId error: $e');
+      debugPrint('⚠️ Supabase getEnrolledCourseId error: $e');
     }
 
     try {
@@ -693,7 +748,7 @@ class StudentRepository {
         return maps.first['course_id'] as int?;
       }
     } catch (e) {
-      print('⚠️ SQLite getEnrolledCourseId error: $e');
+      debugPrint('⚠️ SQLite getEnrolledCourseId error: $e');
     }
     return null;
   }

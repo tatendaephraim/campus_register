@@ -42,3 +42,8 @@ android {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // BiometricPrompt needs an AppCompat theme on Android 8 and below.
+    implementation("androidx.appcompat:appcompat:1.7.1")
+}

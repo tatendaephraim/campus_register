@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -33,10 +34,10 @@ class TeacherRepository {
           .single();
 
       supabaseTeacher = Teacher.fromMap(response);
-      print('✅ Synced Teacher to Supabase: ${supabaseTeacher.name}');
+      debugPrint('✅ Synced Teacher to Supabase: ${supabaseTeacher.name}');
     } on PostgrestException catch (e) {
       if (e.message.contains('teachers_office_venue_id_fkey')) {
-        print('⚠️ Office venue missing in cloud. Attempting to sync venue first...');
+        debugPrint('⚠️ Office venue missing in cloud. Attempting to sync venue first...');
         try {
           final officeId = teacher.officeVenueId;
           if (officeId != null) {
@@ -45,7 +46,7 @@ class TeacherRepository {
             if (localVenue != null) {
                // Push venue to cloud
                await _supabase.from('venues').upsert(localVenue.toMap());
-               print('✅ Auto-synced missing office venue: ${localVenue.name}');
+               debugPrint('✅ Auto-synced missing office venue: ${localVenue.name}');
                
                // Re-attempt original teacher sync
                final retryResponse = await _supabase
@@ -54,7 +55,7 @@ class TeacherRepository {
                   .select()
                   .single();
                supabaseTeacher = Teacher.fromMap(retryResponse);
-               print('✅ Teacher synced successfully after venue repair.');
+               debugPrint('✅ Teacher synced successfully after venue repair.');
                return supabaseTeacher;
             }
           }
@@ -64,13 +65,13 @@ class TeacherRepository {
           final fallbackResponse = await _supabase.from('teachers').upsert(map, onConflict: 'email').select().single();
           supabaseTeacher = Teacher.fromMap(fallbackResponse);
         } catch (innerE) {
-          print('⚠️ Failed venue-first repair sync: $innerE');
+          debugPrint('⚠️ Failed venue-first repair sync: $innerE');
         }
       } else {
-        print('⚠️ Supabase Teacher upsert error: $e');
+        debugPrint('⚠️ Supabase Teacher upsert error: $e');
       }
     } catch (e) {
-      print('⚠️ Supabase Teacher upsert error: $e');
+      debugPrint('⚠️ Supabase Teacher upsert error: $e');
     }
 
     // 2. Save locally (using Supabase-generated ID if available)
@@ -149,7 +150,7 @@ class TeacherRepository {
         return Teacher.fromMap(map);
       }
     } catch (e) {
-      print('⚠️ Supabase fetch teacher by ID error: $e');
+      debugPrint('⚠️ Supabase fetch teacher by ID error: $e');
     }
 
     final db = await dbHelper.database;
@@ -192,7 +193,7 @@ class TeacherRepository {
 
         // If ID changed (syncing from local to Supabase), migration is needed
         if (localId != null && supabaseId != null && localId != supabaseId) {
-          print('🔄 Teacher ID migration: $localId -> $supabaseId');
+          debugPrint('🔄 Teacher ID migration: $localId -> $supabaseId');
           await db.transaction((txn) async {
             // Update all related tables that use teacher_id as a foreign key
             await txn.update('courses', {'teacher_id': supabaseId}, where: 'teacher_id = ?', whereArgs: [localId]);
@@ -229,12 +230,12 @@ class TeacherRepository {
         return Teacher.fromMap(map);
       } else if (localMaps.isNotEmpty) {
         // CRITICAL FIX: Teacher is local but missing from Supabase. PUSH IT NOW.
-        print('⚠️ Teacher found locally but missing from Supabase. Attempting repair sync...');
+        debugPrint('⚠️ Teacher found locally but missing from Supabase. Attempting repair sync...');
         final localTeacher = Teacher.fromMap(localMaps.first);
         return await upsertTeacher(localTeacher);
       }
     } catch (e) {
-      print('⚠️ Supabase fetch teacher error: $e');
+      debugPrint('⚠️ Supabase fetch teacher error: $e');
     }
 
     // Fallback to SQLite
@@ -266,7 +267,7 @@ class TeacherRepository {
 
       return teachers;
     } catch (e) {
-      print('⚠️ Supabase fetch all teachers error: $e');
+      debugPrint('⚠️ Supabase fetch all teachers error: $e');
     }
 
     // Fallback to SQLite
@@ -314,7 +315,7 @@ class TeacherRepository {
       }
       await batch.commit(noResult: true);
     } catch (e) {
-      print('⚠️ Supabase fetch pending employees error: $e');
+      debugPrint('⚠️ Supabase fetch pending employees error: $e');
     }
 
     final db = await dbHelper.database;
@@ -350,11 +351,11 @@ class TeacherRepository {
       }
       await batch.commit(noResult: true);
 
-      print(
+      debugPrint(
           '✅ Fetched and cached ${students.length} pending students from Supabase.');
       return students;
     } catch (e) {
-      print('⚠️ Supabase fetch pending students error: $e');
+      debugPrint('⚠️ Supabase fetch pending students error: $e');
     }
 
     // Fallback to SQLite if Supabase fails
@@ -406,7 +407,7 @@ class TeacherRepository {
       }
       await batch.commit(noResult: true);
     } catch (e) {
-      print('⚠️ Supabase fetch approved employees error: $e');
+      debugPrint('⚠️ Supabase fetch approved employees error: $e');
     }
 
     final db = await dbHelper.database;
@@ -425,9 +426,9 @@ class TeacherRepository {
       await _supabase
           .from('teachers')
           .update({'is_approved': 1, 'role': role}).eq('id', employeeId);
-      print('✅ Approved employee $employeeId on Supabase with role: $role');
+      debugPrint('✅ Approved employee $employeeId on Supabase with role: $role');
     } catch (e) {
-      print('⚠️ Supabase approve employee error: $e');
+      debugPrint('⚠️ Supabase approve employee error: $e');
     }
 
     final db = await dbHelper.database;
@@ -443,9 +444,9 @@ class TeacherRepository {
   Future<void> rejectEmployee(int employeeId) async {
     try {
       await _supabase.from('teachers').delete().eq('id', employeeId);
-      print('✅ Rejected and deleted employee $employeeId from Supabase');
+      debugPrint('✅ Rejected and deleted employee $employeeId from Supabase');
     } catch (e) {
-      print('⚠️ Supabase reject employee error: $e');
+      debugPrint('⚠️ Supabase reject employee error: $e');
     }
 
     final db = await dbHelper.database;
@@ -462,9 +463,9 @@ class TeacherRepository {
       await _supabase
           .from('teachers')
           .update({'device_app_id': deviceId}).eq('id', teacherId);
-      print('✅ Updated teacher device ID on Supabase');
+      debugPrint('✅ Updated teacher device ID on Supabase');
     } catch (e) {
-      print('⚠️ Supabase updateTeacherDeviceId error: $e');
+      debugPrint('⚠️ Supabase updateTeacherDeviceId error: $e');
     }
 
     final db = await dbHelper.database;
@@ -482,9 +483,9 @@ class TeacherRepository {
       await _supabase
           .from('teachers')
           .update({'office_venue_id': venueId}).eq('id', teacherId);
-      print('✅ Updated teacher office venue on Supabase');
+      debugPrint('✅ Updated teacher office venue on Supabase');
     } catch (e) {
-      print('⚠️ Supabase updateTeacherOfficeVenue error: $e');
+      debugPrint('⚠️ Supabase updateTeacherOfficeVenue error: $e');
     }
 
     final db = await dbHelper.database;
@@ -504,9 +505,9 @@ class TeacherRepository {
         'email': teacher.email,
         'role': teacher.role,
       }).eq('id', teacher.id!);
-      print('✅ Updated teacher metadata on Supabase');
+      debugPrint('✅ Updated teacher metadata on Supabase');
     } catch (e) {
-      print('⚠️ Supabase updateTeacher error: $e');
+      debugPrint('⚠️ Supabase updateTeacher error: $e');
     }
 
     final db = await dbHelper.database;
@@ -528,9 +529,9 @@ class TeacherRepository {
       await _supabase
           .from('teachers')
           .update({'is_approved': 0}).eq('id', teacherId);
-      print('✅ Suspended teacher $teacherId on Supabase');
+      debugPrint('✅ Suspended teacher $teacherId on Supabase');
     } catch (e) {
-      print('⚠️ Supabase suspendTeacher error: $e');
+      debugPrint('⚠️ Supabase suspendTeacher error: $e');
     }
 
     final db = await dbHelper.database;
@@ -555,8 +556,9 @@ class TeacherRepository {
           .eq('id', teacherId)
           .maybeSingle();
 
-      if (teacherResponse == null || teacherResponse['organization_id'] == null)
+      if (teacherResponse == null || teacherResponse['organization_id'] == null) {
         return null;
+      }
 
       final orgId = teacherResponse['organization_id'];
 
@@ -568,7 +570,7 @@ class TeacherRepository {
           .single();
       return orgResponse['name'] as String?;
     } catch (e) {
-      print('⚠️ Supabase getTeacherOrganizationName error: $e');
+      debugPrint('⚠️ Supabase getTeacherOrganizationName error: $e');
       return null;
     }
   }

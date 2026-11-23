@@ -25,7 +25,10 @@ class RoleSelectionScreen extends StatelessWidget {
         ),
         child: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpace.xxl, vertical: AppSpace.xxxl),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpace.xxl,
+              vertical: AppSpace.xxxl,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -37,7 +40,9 @@ class RoleSelectionScreen extends StatelessWidget {
                     decoration: BoxDecoration(
                       boxShadow: [
                         BoxShadow(
-                          color: theme.colorScheme.primary.withOpacity(0.25),
+                          color: theme.colorScheme.primary.withValues(
+                            alpha: 0.25,
+                          ),
                           blurRadius: 36,
                           spreadRadius: 4,
                         ),
@@ -70,8 +75,14 @@ class RoleSelectionScreen extends StatelessWidget {
                 // Volumetric status badge
                 Center(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                    decoration: AppDeco.statusPill(theme.colorScheme.primary, opacity: 0.1),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 7,
+                    ),
+                    decoration: AppDeco.statusPill(
+                      theme.colorScheme.primary,
+                      opacity: 0.1,
+                    ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -84,14 +95,16 @@ class RoleSelectionScreen extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: AppSpace.sm),
-                        Text(
-                          'VOLUMETRIC 3D TRACKING ENABLED',
-                          style: AppType.body(
-                            context,
-                            fontSize: 11,
-                            color: theme.colorScheme.primary,
-                            weight: FontWeight.w700,
-                            letterSpacing: 0.4,
+                        Flexible(
+                          child: Text(
+                            'VOLUMETRIC 3D TRACKING ENABLED',
+                            style: AppType.body(
+                              context,
+                              fontSize: 11,
+                              color: theme.colorScheme.primary,
+                              weight: FontWeight.w700,
+                              letterSpacing: 0.4,
+                            ),
                           ),
                         ),
                       ],
@@ -117,14 +130,17 @@ class RoleSelectionScreen extends StatelessWidget {
                 _buildRoleCard(
                   context,
                   title: "I'm an Employee/Educator/Student",
-                  subtitle: 'If you have an account sign in here (Employee/Educator), but students sign in below'
+                  subtitle:
+                      'If you have an account sign in here (Employee/Educator), but students sign in below'
                       ',unless you do not have an account',
                   icon: Icons.school_rounded,
                   color: theme.colorScheme.primary,
                   onTap: () {
-                    Navigator.of(context).push(MaterialPageRoute(
-                      builder: (context) => const TeacherLoginScreen(),
-                    ));
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => const TeacherLoginScreen(),
+                      ),
+                    );
                   },
                 ),
                 const SizedBox(height: AppSpace.lg),
@@ -132,13 +148,16 @@ class RoleSelectionScreen extends StatelessWidget {
                 _buildRoleCard(
                   context,
                   title: "I'm a Student",
-                  subtitle: 'Register your device, view timetable, and sign in securely',
+                  subtitle:
+                      'Register your device, view timetable, and sign in securely',
                   icon: Icons.person_pin_rounded,
                   color: AppColors.sky,
                   onTap: () {
-                    Navigator.of(context).push(MaterialPageRoute(
-                      builder: (context) => const StudentRegistrationScreen(),
-                    ));
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => const StudentRegistrationScreen(),
+                      ),
+                    );
                   },
                 ),
                 const Spacer(),
@@ -167,24 +186,34 @@ class RoleSelectionScreen extends StatelessWidget {
       shape: RoundedRectangleBorder(
         borderRadius: AppRadius.xlR,
         side: BorderSide(
-          color: isDark ? Colors.white.withOpacity(0.06) : AppColors.slate200,
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.06)
+              : AppColors.slate200,
           width: 1.5,
         ),
       ),
-      color: isDark ? AppColors.slate800.withOpacity(0.6) : Colors.white.withOpacity(0.92),
+      color: isDark
+          ? AppColors.slate800.withValues(alpha: 0.6)
+          : Colors.white.withValues(alpha: 0.92),
       child: InkWell(
         onTap: onTap,
         borderRadius: AppRadius.xlR,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpace.xl, vertical: AppSpace.xxl),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpace.xl,
+            vertical: AppSpace.xxl,
+          ),
           child: Row(
             children: [
               Container(
                 padding: const EdgeInsets.all(AppSpace.lg),
                 decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
+                  color: color.withValues(alpha: 0.1),
                   borderRadius: AppRadius.lgR,
-                  border: Border.all(color: color.withOpacity(0.15), width: 1),
+                  border: Border.all(
+                    color: color.withValues(alpha: 0.15),
+                    width: 1,
+                  ),
                 ),
                 child: Icon(icon, size: 30, color: color),
               ),
@@ -219,10 +248,16 @@ class RoleSelectionScreen extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
-                  color: isDark ? Colors.white.withOpacity(0.04) : AppColors.slate100,
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.04)
+                      : AppColors.slate100,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(Icons.arrow_forward_ios_rounded, size: 14, color: color),
+                child: Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  size: 14,
+                  color: color,
+                ),
               ),
             ],
           ),

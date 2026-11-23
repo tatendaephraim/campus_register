@@ -4,7 +4,9 @@ import 'package:lottie/lottie.dart' hide Marker;
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'venue.dart' as app_models;
+import 'domain/volumetric_check.dart' show HeightBand;
 import 'venue_repository.dart';
+import 'volumetric_field_test_screen.dart';
 import 'venue_editor_screen.dart';
 import 'ui/design_tokens.dart';
 
@@ -186,9 +188,9 @@ class _ManageVenuesScreenState extends State<ManageVenuesScreen> {
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            Colors.black.withOpacity(0.45),
-                            Colors.black.withOpacity(0.1),
-                            Colors.black.withOpacity(0.6),
+                            Colors.black.withValues(alpha: 0.45),
+                            Colors.black.withValues(alpha: 0.1),
+                            Colors.black.withValues(alpha: 0.6),
                           ],
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
@@ -205,7 +207,7 @@ class _ManageVenuesScreenState extends State<ManageVenuesScreen> {
                             '3D VOLUMETRIC GEOFENCES',
                             style: AppType.body(
                               context,
-                              color: Colors.white.withOpacity(0.8),
+                              color: Colors.white.withValues(alpha: 0.8),
                               weight: FontWeight.w700,
                               fontSize: 10,
                               letterSpacing: 1.2,
@@ -217,7 +219,7 @@ class _ManageVenuesScreenState extends State<ManageVenuesScreen> {
                             style: AppType.body(
                               context,
                               fontSize: 12.5,
-                              color: Colors.white.withOpacity(0.7),
+                              color: Colors.white.withValues(alpha: 0.7),
                             ),
                           ),
                         ],
@@ -365,7 +367,7 @@ class _ManageVenuesScreenState extends State<ManageVenuesScreen> {
               children: [
                 CircleAvatar(
                   radius: 18,
-                  backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
+                  backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.1),
                   child: Icon(
                     venue.category == 'classroom'
                         ? Icons.school_rounded
@@ -426,13 +428,13 @@ class _ManageVenuesScreenState extends State<ManageVenuesScreen> {
                         ],
                       ),
                     ),
-                    PopupMenuItem(
+                    const PopupMenuItem(
                       value: 'delete',
                       child: Row(
                         children: [
-                          const Icon(Icons.delete_outline_rounded, color: AppColors.danger, size: 18),
-                          const SizedBox(width: AppSpace.sm),
-                          const Text('Delete Venue', style: TextStyle(color: AppColors.danger, fontSize: 13)),
+                          Icon(Icons.delete_outline_rounded, color: AppColors.danger, size: 18),
+                          SizedBox(width: AppSpace.sm),
+                          Text('Delete Venue', style: TextStyle(color: AppColors.danger, fontSize: 13)),
                         ],
                       ),
                     ),
@@ -451,10 +453,19 @@ class _ManageVenuesScreenState extends State<ManageVenuesScreen> {
                     Icon(Icons.layers_rounded, size: 13, color: AppColors.textTertiary(isDark)),
                     const SizedBox(width: 4),
                     Text(
-                      'Alt: ${venue.altitude.toStringAsFixed(1)}m (±${venue.verticalTolerance > 0 ? venue.verticalTolerance : 12.0}m)',
+                      'Alt: ${venue.altitude.toStringAsFixed(1)}m (-${HeightBand.forVenue(venue).below.toStringAsFixed(0)}/+${HeightBand.forVenue(venue).above.toStringAsFixed(0)}m)',
                       style: AppType.body(context, fontSize: 11.5, color: AppColors.textSecondary(isDark)),
                     ),
                   ],
+                ),
+                IconButton(
+                  icon: const Icon(Icons.science_outlined, size: 18),
+                  tooltip: '3D field test',
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => VolumetricFieldTestScreen(venue: venue),
+                    ),
+                  ),
                 ),
                 // Toggle Map button
                 TextButton.icon(
@@ -509,7 +520,7 @@ class _ManageVenuesScreenState extends State<ManageVenuesScreen> {
                           circleId: CircleId(venue.id.toString()),
                           center: center,
                           radius: venue.radius,
-                          fillColor: theme.colorScheme.primary.withOpacity(0.12),
+                          fillColor: theme.colorScheme.primary.withValues(alpha: 0.12),
                           strokeColor: theme.colorScheme.primary,
                           strokeWidth: 2,
                         )
@@ -521,7 +532,7 @@ class _ManageVenuesScreenState extends State<ManageVenuesScreen> {
                           points: venue.polygonCorners!
                               .map((c) => LatLng(c.latitude, c.longitude))
                               .toList(),
-                          fillColor: theme.colorScheme.primary.withOpacity(0.12),
+                          fillColor: theme.colorScheme.primary.withValues(alpha: 0.12),
                           strokeColor: theme.colorScheme.primary,
                           strokeWidth: 2,
                         )
@@ -564,9 +575,9 @@ class _ManageVenuesScreenState extends State<ManageVenuesScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: color.withOpacity(0.2), width: 1),
+        border: Border.all(color: color.withValues(alpha: 0.2), width: 1),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

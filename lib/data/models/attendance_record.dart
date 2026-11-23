@@ -50,12 +50,12 @@ class AttendanceRecord {
       type: map['type'] as String,
       timestamp: DateTime.parse(map['timestamp'] as String),
       location: map['location'] as String,
-      altitude: map['altitude'] as double,
+      altitude: (map['altitude'] as num).toDouble(),
       estimatedFloor: map['estimatedFloor'] as int,
       venueName: map['venueName'] as String,
       venueDescription: map['venueDescription'] as String?,
-      latitude: map['latitude'] as double,
-      longitude: map['longitude'] as double,
+      latitude: (map['latitude'] as num).toDouble(),
+      longitude: (map['longitude'] as num).toDouble(),
     );
   }
 

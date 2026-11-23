@@ -68,9 +68,9 @@ class AppColors {
   static Color surface(bool isDark) => isDark ? slate800 : Colors.white;
   static Color surfaceMuted(bool isDark) => isDark ? slate900 : slate50;
   static Color border(bool isDark) =>
-      isDark ? Colors.white.withOpacity(0.08) : slate200;
+      isDark ? Colors.white.withValues(alpha: 0.08) : slate200;
   static Color scrim(bool isDark) =>
-      isDark ? Colors.black.withOpacity(0.4) : Colors.black.withOpacity(0.06);
+      isDark ? Colors.black.withValues(alpha: 0.4) : Colors.black.withValues(alpha: 0.06);
 }
 
 /// Spacing scale — use these instead of ad-hoc magic numbers for new code.
@@ -197,16 +197,16 @@ class AppDeco {
   /// (e.g. "Volumetric 3D Tracking Enabled", "Within geofence").
   static BoxDecoration statusPill(Color color, {double opacity = 0.1}) {
     return BoxDecoration(
-      color: color.withOpacity(opacity),
+      color: color.withValues(alpha: opacity),
       borderRadius: AppRadius.smR,
-      border: Border.all(color: color.withOpacity(opacity * 2), width: 1),
+      border: Border.all(color: color.withValues(alpha: opacity * 2), width: 1),
     );
   }
 
   /// Soft glow used behind key icons/marks (role selection, check-in).
   static List<BoxShadow> glow(Color color, {double opacity = 0.18, double blur = 32, double spread = 6}) {
     return [
-      BoxShadow(color: color.withOpacity(opacity), blurRadius: blur, spreadRadius: spread),
+      BoxShadow(color: color.withValues(alpha: opacity), blurRadius: blur, spreadRadius: spread),
     ];
   }
 }

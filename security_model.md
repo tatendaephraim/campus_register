@@ -1,10 +1,10 @@
 # Campus Register - Biometric & Device Binding Security Model 🔒
 
-This document details the security architecture of the **Campus Register** application, explaining how it enforces biometric integrity, guarantees device-to-student binding, and prevents attendance fraud (e.g., logging in with another device or delegating check-ins).
+This document details the security architecture of the **Campus Register** application, explaining how it enforces biometric integrity, binds a student to a device, and prevents attendance fraud (e.g., logging in with another device or delegating check-ins).
 
 ---
 
-## 🛡️ 1. How Biometric & Device Binding Works (Guaranteed 1-to-1 Pairing)
+## 🛡️ 1. How Biometric & Device Binding Works
 
 To prevent a student from checking in for another classmate (known as "buddy checking"), the application relies on a strict **1-to-1 hardware-to-profile binding** established during student registration.
 
@@ -33,15 +33,15 @@ sequenceDiagram
 
 1.  **Teacher Registration Initialization:** The teacher creates the student profile on the dashboard. The system generates a single-use random 6-digit code (e.g., `564738`) and stores it temporarily in the `device_app_id` field.
 2.  **Device UUID Capturing:** When the student registers, the mobile app queries the native operating system hardware API for a unique device hardware identifier:
-    *   **Android:** `AndroidId` (provided via `device_info_plus` querying the Android Keystore system).
-    *   **iOS:** `identifierForVendor` (a unique hardware-bound UUID generated per app vendor).
+    *   **Android:** `ANDROID_ID`, which is unique to the phone, the user and the app signing key.
+    *   **iOS:** `identifierForVendor`, which is unique to the phone and app vendor.
 3.  **One-Time Code Consumption:** The app sends the device ID along with the registration code to Supabase. The database **overwrites** the temporary registration code in the `device_app_id` field with the device's hardware ID.
 
 ---
 
 ## 🚫 2. Preventing Logins/Check-ins on Other Devices
 
-The application guarantees that a student **cannot** log in on another device and check in for themselves or others. Here is how that is strictly enforced:
+The application is designed so that a student cannot sign in from another ordinary phone:
 
 ### A. Passwordless, Hardware-Locked Authentication
 There are no passwords or username fields in the student portal. The student's identity is determined **exclusively** by the device ID of the phone opening the app.
@@ -50,10 +50,8 @@ When the app launches, it reads the local hardware ID and checks if that ID matc
 *   The database query for that device ID returns empty, and the app defaults to the registration/role-selection screen.
 *   If the student attempts to enter their registration code again on the new device, the attempt is rejected because the 6-digit code **no longer exists** in the database (having been overwritten during initial registration).
 
-### B. Unique Database Constraint
-The database schema defines the `device_app_id` field with a `UNIQUE` constraint. This means:
-*   No two student profiles can ever be bound to the same device hardware ID.
-*   This prevents students from sharing a single device to check in sequentially.
+### B. One Student per Phone
+Registration is refused when the phone already belongs to a student with a different name. One student may hold several course profiles on the same phone. This is checked by the app. The local schema has no `UNIQUE` constraint on `device_app_id`, because one student may have several rows.
 
 ---
 
@@ -61,25 +59,25 @@ The database schema defines the `device_app_id` field with a `UNIQUE` constraint
 
 When a student checks in:
 1.  The app prompts the device's native biometric authentication module (`local_auth`).
-2.  The verification is handled directly by the **Secure Enclave** (iOS) or **Trusted Execution Environment / Keystore** (Android).
+2.  The verification is handled by the operating system and its secure hardware. A PIN is not accepted instead.
 3.  The operating system verifies that the finger pressed matches one of the fingerprints enrolled on the device.
-4.  **No Spoofing:** Because the biometric check executes inside the hardware's secure enclave, the app logic only receives a secure cryptographic confirmation token (`true`/`false`). The app itself has no code pathways that can bypass this prompt.
+4.  **Result only:** The app receives success or failure, not a fingerprint, an image or a signed token. A modified app on a rooted phone could ignore the result, which is out of scope.
 
 ### ❓ What if a student registers a classmate's fingerprint on their phone?
 *   A phone can technically store multiple fingerprints (e.g. Owner's finger + Spouse's finger).
 *   However, because the account profile is locked to the physical device ID, the student would have to **give their physical phone** to their classmate to check in.
 *   To check in on that phone, the classmate would have to physically walk into the classroom to pass the **3D Volumetric Geofence** (polygon check) and the **Altitude Ceiling** (floor check).
-*   Therefore, the classmate cannot check them in remotely. They would need to physically carry the absent student's phone into the classroom, rendering remote cheating impossible.
+*   Therefore, a classmate would need to carry the absent student's phone into the classroom. This makes the fraud harder and more visible, but not impossible.
 
 ---
 
 ## 🌐 4. Volumetric Geofencing & GPS Lateral Tolerances
 
-To prevent GPS spoofing and address hardware inaccuracies, the application enforces a 3D volumetric verification boundary with dual-plane tolerance zones.
+To limit location fraud and allow for sensor error, the application enforces a 3D boundary. Mocked and stale positions are refused.
 
 ### A. Vertical (Altitude) Gatekeeper
-*   **Purpose:** Prevents students from checking in from upper floors or underground levels.
-*   **Allowance Zone:** A range of **-2.0 meters to +5.0 meters** is allowed relative to the classroom's baseline altitude.
+*   **Purpose:** Refuses check-in from distant floors. Adjacent floors are not reliably separated; see the README.
+*   **Allowance Zone:** By default **-8 m to +12 m** around the captured floor. Each venue can be set between 2 m and 20 m. GPS altitude and the barometer are fused, and the app accepts when the probability of being inside the band is at least 50%.
 *   **Enforcement:** Prevents false check-ins if the student is standing directly above or below the classroom.
 
 ### B. Lateral (Horizontal) Allowance [NEW]
@@ -99,11 +97,11 @@ A student’s phone contains highly sensitive personal data (banking apps, priva
 * Due to privacy concerns, the friction of giving away an unlocked personal phone is extremely high, making it a very rare occurrence.
 * If a classmate is caught holding or scanning two active phones during class, it is a visible physical indicator of attendance spoofing.
 
-### B. Biometric Key Invalidation (The Cryptographic Defense)
-On Android and iOS, we can generate a cryptographic key pair inside the phone's hardware **Secure Enclave / Keystore** to sign check-ins.
-* When this key is generated, we set the OS attribute `setInvalidatedByBiometricEnrollment(true)` (Android) or `SecAccessControl` policies (iOS).
+### B. Biometric Key Invalidation (planned, not implemented)
+This defence is not in the current version. A future version could generate a cryptographic key pair inside the phone's hardware **Secure Enclave / Keystore** to sign check-ins.
+* When this key is generated, it would set the OS attribute `setInvalidatedByBiometricEnrollment(true)` (Android) or `SecAccessControl` policies (iOS).
 * If the student enrolls a new fingerprint (e.g., their friend's) in their device settings *after* the initial registration, **the phone's operating system automatically invalidates and deletes the cryptographic keys**.
-* The app's check-in will immediately fail. The student will be locked out and must ask the teacher to reset their account, exposing the modification attempt.
+* The check-in would then fail, and the student would have to ask the teacher to reset their account, exposing the modification attempt.
 
 ### C. Secondary Front-Camera Verification (Optional Upgrade)
 For high-stakes examinations or strict attendance policies, a front-camera verification step can be integrated:
@@ -118,6 +116,6 @@ For high-stakes examinations or strict attendance policies, a front-camera verif
 If a student gets a new phone or loses their device, they cannot register the new device themselves because their code is already consumed.
 
 1.  The student must report the device change to the teacher.
-2.  The teacher opens the student management portal.
-3.  The teacher resets the student's device binding.
-4.  The system clears the `device_app_id` on Supabase and generates a **new single-use registration code** for the student's new device.
+2.  The teacher opens the student management screen and taps **Reset device**.
+3.  The server replaces the binding with a **new single-use registration code**.
+4.  The old phone loses access the next time it is online.

@@ -36,9 +36,9 @@ class AttendanceRecord {
       timestamp: DateTime.parse(map['timestamp'] as String),
       status: map['status'] as String,
       location: map['location'] as String,
-      altitude: map['altitude'] as double,
-      latitude: map['latitude'] as double,
-      longitude: map['longitude'] as double,
+      altitude: (map['altitude'] as num).toDouble(),
+      latitude: (map['latitude'] as num).toDouble(),
+      longitude: (map['longitude'] as num).toDouble(),
       checkedOutAt: map['checked_out_at'] != null ? DateTime.parse(map['checked_out_at'] as String) : null,
     );
   }

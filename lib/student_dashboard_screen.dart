@@ -17,6 +17,8 @@ import 'student_profile_screen.dart';
 import 'check_in_repository.dart';
 import 'services/biometric_service.dart';
 import 'services/altitude_service.dart';
+import 'services/volumetric_verifier.dart';
+import 'venue.dart';
 import 'check_in_service.dart';
 import 'attendance_repository.dart';
 import 'student_attendance_view.dart';
@@ -42,11 +44,13 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   final _sheetsSyncService = GoogleSheetsSyncService();
   final _courseRepo = CourseRepository();
   final _locationService = LocationService();
+  final _verifier = VolumetricVerifier();
   final _venueRepo = VenueRepository();
 
   Timer? _timer;
   Timer? _countdownTimer;
   bool _isCheckingIn = false;
+  bool _pollLocation = true;
   bool _showGuide = false; // Toggle for volumetric tracking info guide
 
   List<Student> _studentProfiles = [];
@@ -67,6 +71,8 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   void initState() {
     super.initState();
     _currentStudent = widget.student;
+    // Warm up the barometer so that it is ready when the student signs in.
+    AltitudeService.instance.start();
     _loadAllDashboardData();
     _startActiveSlotChecker();
     _startCountdownTimer();
@@ -76,6 +82,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   void dispose() {
     _timer?.cancel();
     _countdownTimer?.cancel();
+    AltitudeService.instance.stop();
     super.dispose();
   }
 
@@ -116,14 +123,28 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     Position? position;
     if (hasAnyActiveSlot) {
       try {
-        // Try getting last known position first (instantaneous)
+        // A recent last known position is instantaneous. An old one may be from
+        // another place, and would show the student as outside.
         position = await Geolocator.getLastKnownPosition();
-        // If last known position is null, get current position with a short timeout and medium accuracy
-        position ??= await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.medium,
-          timeLimit: const Duration(seconds: 4),
-        );
-      } catch (_) {}
+        if (position != null &&
+            DateTime.now().difference(position.timestamp).abs() >
+                const Duration(minutes: 1)) {
+          position = null;
+        }
+        if (position == null && _pollLocation) {
+          position = await Geolocator.getCurrentPosition(
+            locationSettings: const LocationSettings(
+              timeLimit: Duration(seconds: 8),
+            ),
+          );
+        }
+      } on TimeoutException {
+        // No fix yet; the next poll tries again.
+      } catch (_) {
+        // Asking again every 30 seconds would reopen the system dialog that the
+        // student just declined. Signing in still asks.
+        _pollLocation = false;
+      }
     }
 
     // 3. Update geofence states and UI
@@ -241,6 +262,8 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
         });
       }
       
+      _checkInRepo.syncPending().catchError((_) => 0);
+
       // Run location check asynchronously
       _checkAllActiveSlots();
     } catch (e) {
@@ -266,56 +289,32 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
         throw 'Class is not currently active. Sign-in is restricted to the specific times of that class.';
       }
 
-      // --- 2. Location Validation & Volumetric Check ---
-      final position = await _locationService.getCurrentPositionWithPermissions();
-
-      final course = _courseByProfileId[student.id!];
-      if (course?.venueId != null) {
-        final venue = await _venueRepo.getVenueById(course!.venueId!);
-        if (venue != null) {
-          if (!venue.hasPolygon) {
-            throw 'Class geofence is invalid. Must have at least 3 corners defined.';
-          }
-
-          final isInsidePolygon = _locationService.isPointInPolygon(
-            position.latitude,
-            position.longitude,
-            venue.polygonCorners!,
-          );
-          if (!isInsidePolygon) {
-            throw 'You are not inside the classroom. Sign-in is restricted to the 3D class boundary.';
-          }
-
-          final currentAlt = AltitudeService.instance.getCombinedAltitude(position.altitude);
-
-          final double toleranceLower = 8.0;
-          final double toleranceUpper = venue.verticalTolerance > 0.0 ? venue.verticalTolerance : 12.0;
-
-          if (currentAlt < venue.altitude - toleranceLower) {
-            throw 'Underground sign-in detected. Sign-in is denied below ground level.';
-          }
-
-          if (currentAlt > venue.altitude + toleranceUpper) {
-            throw 'Upper floor sign-in detected. Fingerprint sensor deactivated because you are not in the classroom.';
-          }
-        }
-      } else {
-        throw 'No geofenced venue is set for this course. Please contact your instructor.';
+      if (await _checkInRepo.hasCheckedInToday(student.id!, activeSlot.id!)) {
+        throw 'You have already checked in for this class today.';
       }
+
+      // --- 2. Location Validation & Volumetric Check ---
+      final course = _courseByProfileId[student.id!];
+      final venue = await _requireVenue(course);
+      var reading = await _verifier.require(venue, source: 'check-in');
 
       // --- 3. Biometric Authentication ---
       final isAuthenticated = await _biometricService.authenticate();
       if (!isAuthenticated) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content:
-                  Text(_biometricService.lastError ?? 'Authentication failed.'),
-              backgroundColor: Colors.red),
-        );
-        setState(() => _isCheckingIn = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text(
+                    _biometricService.lastError ?? 'Authentication failed.'),
+                backgroundColor: Colors.red),
+          );
+        }
         return;
       }
 
+      // The prompt can stay open while the student walks away.
+      reading = await _recheckIfStale(reading, venue, 'check-in');
+      final position = reading.position;
       final now = DateTime.now();
 
       // --- 4. Determine Attendance Status (PRESENT or LATE) ---
@@ -334,8 +333,6 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
         attendanceStatus = 'LATE';
       }
 
-      final currentAlt = AltitudeService.instance.getCombinedAltitude(position.altitude);
-
       final record = AttendanceRecord(
         studentId: student.id!,
         timetableSlotId: activeSlot.id!,
@@ -343,7 +340,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
         timestamp: now,
         status: attendanceStatus,
         location: '${position.latitude}, ${position.longitude}',
-        altitude: currentAlt,
+        altitude: reading.altitudeM,
         latitude: position.latitude,
         longitude: position.longitude,
       );
@@ -351,25 +348,51 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
       await _checkInRepo.createAttendanceRecord(record);
 
       _sheetsSyncService.syncRecord(
-          record: record, student: student, course: course);
+          record: record, student: student, course: course!, venue: venue);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Check-in successful!'),
-            backgroundColor: Colors.green),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Check-in successful!'),
+              backgroundColor: Colors.green),
+        );
+      }
 
       _loadAllDashboardData();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Check-in failed: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Check-in failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } finally {
-      setState(() => _isCheckingIn = false);
+      if (mounted) setState(() => _isCheckingIn = false);
     }
+  }
+
+  /// Fails closed: a class without a usable venue cannot be signed into.
+  Future<Venue> _requireVenue(Course? course) async {
+    if (course?.venueId == null) {
+      throw 'No geofenced venue is set for this course. Please contact your instructor.';
+    }
+    final venue = await _venueRepo.getVenueById(course!.venueId!);
+    if (venue == null) {
+      throw 'The class venue could not be loaded. Check your connection and try again.';
+    }
+    return venue;
+  }
+
+  Future<VolumetricReading> _recheckIfStale(
+    VolumetricReading reading,
+    Venue venue,
+    String source,
+  ) async {
+    final age = DateTime.now().difference(reading.position.timestamp).abs();
+    if (age <= _verifier.check.maxFixAge) return reading;
+    return _verifier.require(venue, source: source);
   }
 
   bool _isCheckOutWindow(String endTimeStr) {
@@ -417,26 +440,8 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
         throw 'Check-out is locked. You can only check out from 5 minutes before to 5 minutes after class ends.';
       }
 
-      final position = await _locationService.getCurrentPositionWithPermissions();
-
-      final course = _courseByProfileId[student.id!];
-      if (course?.venueId != null) {
-        final venue = await _venueRepo.getVenueById(course!.venueId!);
-        if (venue != null) {
-          if (!venue.hasPolygon) {
-            throw 'Class geofence is invalid. Must have at least 3 corners defined.';
-          }
-
-          final isInsidePolygon = _locationService.isPointInPolygon(
-            position.latitude,
-            position.longitude,
-            venue.polygonCorners!,
-          );
-          if (!isInsidePolygon) {
-            throw 'You are not inside the classroom. Check-out is restricted to the 3D class boundary.';
-          }
-        }
-      }
+      final venue = await _requireVenue(_courseByProfileId[student.id!]);
+      final reading = await _verifier.require(venue, source: 'check-out');
 
       final isAuthenticated = await _biometricService.authenticate();
       if (!isAuthenticated) {
@@ -447,10 +452,10 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                 backgroundColor: Colors.red),
           );
         }
-        setState(() => _isCheckingIn = false);
         return;
       }
 
+      await _recheckIfStale(reading, venue, 'check-out');
       final now = DateTime.now();
       await _checkInRepo.checkoutAttendanceRecord(record.id!, now.toIso8601String());
 
@@ -674,9 +679,9 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            Colors.black.withOpacity(0.35),
-                            Colors.black.withOpacity(0.0),
-                            Colors.black.withOpacity(0.6),
+                            Colors.black.withValues(alpha: 0.35),
+                            Colors.black.withValues(alpha: 0.0),
+                            Colors.black.withValues(alpha: 0.6),
                           ],
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
@@ -693,7 +698,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                             'STUDENT PORTAL',
                             style: AppType.body(
                               context,
-                              color: Colors.white.withOpacity(0.85),
+                              color: Colors.white.withValues(alpha: 0.85),
                               weight: FontWeight.w700,
                               fontSize: 10,
                               letterSpacing: 1.2,
@@ -717,7 +722,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                             style: AppType.body(
                               context,
                               fontSize: 12.5,
-                              color: Colors.white.withOpacity(0.7),
+                              color: Colors.white.withValues(alpha: 0.7),
                             ),
                           ),
                         ],
@@ -750,7 +755,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                           errorBuilder: (context, error, stackTrace) => Icon(
                             Icons.school_rounded,
                             size: 80,
-                            color: theme.colorScheme.primary.withOpacity(0.1),
+                            color: theme.colorScheme.primary.withValues(alpha: 0.1),
                           ),
                         ),
                         const SizedBox(height: AppSpace.xl),
@@ -776,7 +781,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                           icon: const Icon(Icons.refresh_rounded),
                           label: const Text('Sync with cloud'),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: theme.colorScheme.primary.withOpacity(0.12),
+                            backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.12),
                             foregroundColor: theme.colorScheme.primary,
                             elevation: 0,
                           ),
@@ -887,7 +892,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                 children: [
                   CircleAvatar(
                     radius: 22,
-                    backgroundColor: theme.colorScheme.primary.withOpacity(0.12),
+                    backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.12),
                     child: Icon(Icons.class_rounded, color: theme.colorScheme.primary, size: 22),
                   ),
                   const SizedBox(width: AppSpace.md),
@@ -1056,12 +1061,12 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
         gradient: LinearGradient(
           colors: isDark
               ? [secondaryColor, AppColors.slate900]
-              : [primaryColor.withOpacity(0.12), primaryColor.withOpacity(0.02)],
+              : [primaryColor.withValues(alpha: 0.12), primaryColor.withValues(alpha: 0.02)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         border: Border.all(
-          color: primaryColor.withOpacity(isDark ? 0.4 : 0.2),
+          color: primaryColor.withValues(alpha: isDark ? 0.4 : 0.2),
           width: 1.5,
         ),
       ),
@@ -1076,11 +1081,11 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: primaryColor.withOpacity(0.3), width: 2),
+                    border: Border.all(color: primaryColor.withValues(alpha: 0.3), width: 2),
                   ),
                   child: CircleAvatar(
                     radius: 24,
-                    backgroundColor: primaryColor.withOpacity(0.12),
+                    backgroundColor: primaryColor.withValues(alpha: 0.12),
                     child: Icon(statusIcon, color: primaryColor, size: 26),
                   ),
                 ),
@@ -1169,9 +1174,9 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                        return Container(
                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                          decoration: BoxDecoration(
-                           color: Colors.blue.withOpacity(0.12),
+                           color: Colors.blue.withValues(alpha: 0.12),
                            borderRadius: AppRadius.smR,
-                           border: Border.all(color: Colors.blue.withOpacity(0.3), width: 1.5),
+                           border: Border.all(color: Colors.blue.withValues(alpha: 0.3), width: 1.5),
                          ),
                          child: Row(
                            mainAxisSize: MainAxisSize.min,
@@ -1204,7 +1209,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                        return Container(
                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                          decoration: BoxDecoration(
-                           color: AppColors.success.withOpacity(0.1),
+                           color: AppColors.success.withValues(alpha: 0.1),
                            borderRadius: AppRadius.smR,
                          ),
                          child: Column(
@@ -1234,9 +1239,9 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                      return Container(
                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                        decoration: BoxDecoration(
-                         color: Colors.orange.withOpacity(0.12),
+                         color: Colors.orange.withValues(alpha: 0.12),
                          borderRadius: AppRadius.smR,
-                         border: Border.all(color: Colors.orange.withOpacity(0.3), width: 1.5),
+                         border: Border.all(color: Colors.orange.withValues(alpha: 0.3), width: 1.5),
                        ),
                        child: Row(
                          mainAxisSize: MainAxisSize.min,
@@ -1298,7 +1303,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
           borderRadius: AppRadius.lgR,
           side: BorderSide(color: AppColors.border(isDark), width: 1),
         ),
-        color: isDark ? AppColors.slate800.withOpacity(0.3) : Colors.white.withOpacity(0.5),
+        color: isDark ? AppColors.slate800.withValues(alpha: 0.3) : Colors.white.withValues(alpha: 0.5),
         child: ExpansionTile(
           shape: const Border(),
           trailing: Icon(
@@ -1339,7 +1344,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                     context,
                     Icons.layers_rounded,
                     'Altitude window',
-                    'Check-ins outside the volumetric height band (-8m to +12m) are rejected — restricting sign-ins from different floors.',
+                    'Check-ins outside the venue\'s height band are rejected, using GPS altitude and the barometer together — restricting sign-ins from different floors.',
                     isDark,
                   ),
                   const SizedBox(height: AppSpace.sm + 2),
@@ -1450,7 +1455,7 @@ class _PulsingBorderState extends State<PulsingBorder> with SingleTickerProvider
             borderRadius: BorderRadius.circular(widget.borderRadius),
             boxShadow: [
               BoxShadow(
-                color: widget.color.withOpacity(_animation.value * (widget.isLight ? 0.35 : 0.65)),
+                color: widget.color.withValues(alpha: _animation.value * (widget.isLight ? 0.35 : 0.65)),
                 blurRadius: 10 + 8 * _animation.value,
                 spreadRadius: 1 + 3 * _animation.value,
               ),

@@ -51,7 +51,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
         });
       }
     } catch (e) {
-      print('⚠️ Error loading school roster: $e');
+      debugPrint('⚠️ Error loading school roster: $e');
     }
   }
 
@@ -333,10 +333,14 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
         final updatedStudent = Student(
           id: student.id,
           courseId: student.courseId,
+          organizationId: student.organizationId,
           name: updatedName,
+          email: student.email,
           deviceAppId: student.deviceAppId,
+          isApproved: student.isApproved,
         );
         await _studentRepo.updateStudent(updatedStudent);
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content:
@@ -347,6 +351,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
         );
         _loadStudents();
       } catch (e) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error updating student: $e'),
@@ -355,6 +360,54 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
           ),
         );
       }
+    }
+  }
+
+  Future<void> _confirmResetDevice(Student student) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Reset device',
+            style: AppType.display(context,
+                fontSize: 17, weight: FontWeight.w600)),
+        shape: RoundedRectangleBorder(borderRadius: AppRadius.xlR),
+        content: Text(
+          'Release the phone bound to ${student.name}? They will need the new '
+          'registration code to sign in again. Their attendance is kept.',
+          style: AppType.body(context, fontSize: 13.5, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || student.id == null) return;
+    try {
+      final code = await _studentRepo.resetDevice(student.id!);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('New code for ${student.name}: $code'),
+          backgroundColor: AppColors.success,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      if (mounted) _loadStudents();
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Could not reset the device: $e'),
+          backgroundColor: AppColors.danger,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -388,6 +441,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
     if (confirmed == true && student.id != null) {
       try {
         await _studentRepo.deleteStudent(student.id!);
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content:
@@ -398,6 +452,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
         );
         _loadStudents();
       } catch (e) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error removing student: $e'),
@@ -444,7 +499,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
                         height: 180,
                         width: 180,
                         fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) => Icon(
+                        errorBuilder: (context, error, stackTrace) => const Icon(
                           Icons.people_outline_rounded,
                           size: 64,
                           color: AppColors.slate400,
@@ -488,7 +543,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
                           horizontal: AppSpace.lg, vertical: AppSpace.sm),
                       leading: CircleAvatar(
                         backgroundColor:
-                            theme.colorScheme.primary.withOpacity(0.08),
+                            theme.colorScheme.primary.withValues(alpha: 0.08),
                         child: Icon(Icons.person_rounded,
                             color: theme.colorScheme.primary),
                       ),
@@ -526,6 +581,13 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> {
                               );
                             },
                           ),
+                          if (!RegExp(r'^\d{6}$').hasMatch(student.deviceAppId))
+                            IconButton(
+                              icon: const Icon(Icons.phonelink_erase_rounded,
+                                  size: 20),
+                              tooltip: 'Reset device',
+                              onPressed: () => _confirmResetDevice(student),
+                            ),
                           IconButton(
                             icon: const Icon(Icons.edit_rounded,
                                 size: 20, color: AppColors.sky),

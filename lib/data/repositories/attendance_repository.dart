@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../local/attendance_local_data_source.dart';
 import '../remote/google_sheets_api.dart';
@@ -11,7 +12,7 @@ class AttendanceRepository {
   // Save attendance with full SQLite support
   Future<bool> saveAttendance(AttendanceRecord record) async {
     try {
-      print('💾 Saving attendance record...');
+      debugPrint('💾 Saving attendance record...');
 
       // 1. Try saving to Supabase first if online
       AttendanceRecord? supabaseRecord;
@@ -28,38 +29,38 @@ class AttendanceRepository {
             .single();
         
         supabaseRecord = AttendanceRecord.fromMap(response);
-        print('✅ Synced attendance record to Supabase');
+        debugPrint('✅ Synced attendance record to Supabase');
       } catch (e) {
-        print('⚠️ Supabase attendance insert error: $e');
+        debugPrint('⚠️ Supabase attendance insert error: $e');
       }
 
       final recordToSave = supabaseRecord ?? record;
 
       // Save to SQLite database (primary storage)
       await _localDataSource.saveToDatabase(recordToSave);
-      print('✅ Saved to SQLite database');
+      debugPrint('✅ Saved to SQLite database');
 
       // Backup to CSV (optional)
       await _localDataSource.saveToCSV(recordToSave);
-      print('✅ Backed up to CSV');
+      debugPrint('✅ Backed up to CSV');
 
       // Sync to Google Sheets (with proper error handling)
-      print('☁️ Syncing to Google Sheets...');
+      debugPrint('☁️ Syncing to Google Sheets...');
       try {
         final syncSuccess = await _remoteApi.syncRecord(recordToSave);
         if (syncSuccess) {
-          print('✅ Successfully synced to Google Sheets');
+          debugPrint('✅ Successfully synced to Google Sheets');
         } else {
-          print('⚠️ Google Sheets sync failed (returned false)');
+          debugPrint('⚠️ Google Sheets sync failed (returned false)');
         }
       } catch (syncError) {
-        print('⚠️ Google Sheets sync error: $syncError');
+        debugPrint('⚠️ Google Sheets sync error: $syncError');
         // Don't fail the entire save if remote sync fails
       }
 
       return true;
     } catch (e) {
-      print('❌ Failed to save attendance: $e');
+      debugPrint('❌ Failed to save attendance: $e');
       return false;
     }
   }
@@ -83,7 +84,7 @@ class AttendanceRepository {
       }
       return records;
     } catch (e) {
-      print('⚠️ Supabase fetch all attendance logs error: $e');
+      debugPrint('⚠️ Supabase fetch all attendance logs error: $e');
     }
 
     return await _localDataSource.getAllRecords();
@@ -102,7 +103,7 @@ class AttendanceRepository {
       final records = response.map((item) => AttendanceRecord.fromMap(item as Map<String, dynamic>)).toList();
       return records;
     } catch (e) {
-      print('⚠️ Supabase fetch recent attendance logs error: $e');
+      debugPrint('⚠️ Supabase fetch recent attendance logs error: $e');
     }
 
     return await _localDataSource.getRecentRecords(limit);
@@ -121,7 +122,7 @@ class AttendanceRepository {
       final records = response.map((item) => AttendanceRecord.fromMap(item as Map<String, dynamic>)).toList();
       return records;
     } catch (e) {
-      print('⚠️ Supabase fetch attendance by venue error: $e');
+      debugPrint('⚠️ Supabase fetch attendance by venue error: $e');
     }
 
     return await _localDataSource.getRecordsByVenue(venueName);
@@ -140,7 +141,7 @@ class AttendanceRepository {
       final records = response.map((item) => AttendanceRecord.fromMap(item as Map<String, dynamic>)).toList();
       return records;
     } catch (e) {
-      print('⚠️ Supabase fetch attendance by user error: $e');
+      debugPrint('⚠️ Supabase fetch attendance by user error: $e');
     }
 
     return await _localDataSource.getRecordsByUser(userName);
@@ -161,7 +162,7 @@ class AttendanceRepository {
       final records = response.map((item) => AttendanceRecord.fromMap(item as Map<String, dynamic>)).toList();
       return records;
     } catch (e) {
-      print('⚠️ Supabase fetch attendance by date range error: $e');
+      debugPrint('⚠️ Supabase fetch attendance by date range error: $e');
     }
 
     return await _localDataSource.getRecordsByDateRange(start, end);
@@ -179,7 +180,7 @@ class AttendanceRepository {
       final count = response.count;
       return count;
     } catch (e) {
-      print('⚠️ Supabase fetch total attendance count error: $e');
+      debugPrint('⚠️ Supabase fetch total attendance count error: $e');
     }
 
     return await _localDataSource.getTotalCount();
@@ -198,9 +199,9 @@ class AttendanceRepository {
           .from('attendance')
           .delete()
           .eq('id', id);
-      print('✅ Deleted attendance log from Supabase: ID=$id');
+      debugPrint('✅ Deleted attendance log from Supabase: ID=$id');
     } catch (e) {
-      print('⚠️ Supabase delete attendance log error: $e');
+      debugPrint('⚠️ Supabase delete attendance log error: $e');
     }
 
     await _localDataSource.deleteRecord(id);
@@ -214,9 +215,9 @@ class AttendanceRepository {
           .from('attendance')
           .delete()
           .neq('id', 0); // Deletes all records
-      print('✅ Cleared all attendance logs from Supabase');
+      debugPrint('✅ Cleared all attendance logs from Supabase');
     } catch (e) {
-      print('⚠️ Supabase clear attendance logs error: $e');
+      debugPrint('⚠️ Supabase clear attendance logs error: $e');
     }
 
     await _localDataSource.clearAllRecords();

@@ -49,7 +49,7 @@ class _VenueMapScreenState extends State<VenueMapScreen> {
           points: polygonPoints,
           strokeColor: Colors.blue,
           strokeWidth: 3,
-          fillColor: Colors.blue.withOpacity(0.2),
+          fillColor: Colors.blue.withValues(alpha: 0.2),
         ),
       );
 
@@ -75,7 +75,7 @@ class _VenueMapScreenState extends State<VenueMapScreen> {
           radius: widget.venue.horizontalRadius,
           strokeColor: Colors.green,
           strokeWidth: 2,
-          fillColor: Colors.green.withOpacity(0.2),
+          fillColor: Colors.green.withValues(alpha: 0.2),
         ),
       );
     }
@@ -140,7 +140,6 @@ class _VenueMapScreenState extends State<VenueMapScreen> {
           : _currentMapType == MapType.hybrid
               ? MapType.satellite
               : MapType.normal;
-      _mapController?.setMapStyle(null);
     });
   }
 

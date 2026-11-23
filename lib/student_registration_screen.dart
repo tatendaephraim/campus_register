@@ -1,17 +1,13 @@
-import 'dart:io';
 
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'student.dart';
 import 'student_repository.dart';
 import 'student_dashboard_screen.dart';
-import 'teacher.dart';
-import 'course.dart';
-import 'teacher_repository.dart';
-import 'course_repository.dart';
+import 'services/device_identity.dart';
 import 'ui/design_tokens.dart';
+import 'utils/utils.dart';
 
 class StudentRegistrationScreen extends StatefulWidget {
   const StudentRegistrationScreen({super.key});
@@ -33,17 +29,7 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
     super.dispose();
   }
 
-  Future<String?> _getDeviceId() async {
-    final deviceInfo = DeviceInfoPlugin();
-    if (Platform.isAndroid) {
-      final androidInfo = await deviceInfo.androidInfo;
-      return androidInfo.id; // A unique ID for the Android device
-    } else if (Platform.isIOS) {
-      final iosInfo = await deviceInfo.iosInfo;
-      return iosInfo.identifierForVendor; // A unique ID for the app vendor
-    }
-    return null;
-  }
+  Future<String?> _getDeviceId() => DeviceIdentity.current();
 
   Future<void> _handleRegistration() async {
     if (!_formKey.currentState!.validate()) return;
@@ -65,7 +51,7 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
       final student = await _studentRepo.registerDevice(
         _codeController.text.trim(),
         deviceId,
-      ).timeout(const Duration(seconds: 10));
+      ).timeout(const Duration(seconds: 40));
 
       setState(() => _isLoading = false);
 
@@ -127,7 +113,7 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
                     decoration: BoxDecoration(
                       boxShadow: [
                         BoxShadow(
-                          color: AppColors.sky.withOpacity(0.15),
+                          color: AppColors.sky.withValues(alpha: 0.15),
                           blurRadius: 28,
                           spreadRadius: 2,
                         ),
@@ -180,13 +166,13 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.sky,
                               foregroundColor: Colors.white,
-                              shadowColor: AppColors.sky.withOpacity(0.4),
+                              shadowColor: AppColors.sky.withValues(alpha: 0.4),
                               elevation: 4,
                               padding: const EdgeInsets.symmetric(vertical: 16),
                             ),
                             child: const Text('Register device'),
                           ),
-                          if (true) ...[
+                          if (devBypassEnabled) ...[
                             const SizedBox(height: AppSpace.lg),
                             OutlinedButton.icon(
                               icon: const Icon(Icons.developer_mode_rounded),

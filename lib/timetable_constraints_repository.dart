@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'database_helper.dart';
@@ -30,7 +31,7 @@ class TimetableConstraintsRepository {
         return constraints;
       }
     } catch (e) {
-      print('⚠️ Supabase fetch constraints error: $e');
+      debugPrint('⚠️ Supabase fetch constraints error: $e');
     }
 
     // 2. Fallback to SQLite
@@ -59,9 +60,9 @@ class TimetableConstraintsRepository {
       await _supabase
           .from('timetable_constraints')
           .upsert(map, onConflict: 'organization_id');
-      print('✅ Synced timetable constraints to Supabase');
+      debugPrint('✅ Synced timetable constraints to Supabase');
     } catch (e) {
-      print('⚠️ Supabase save constraints error: $e');
+      debugPrint('⚠️ Supabase save constraints error: $e');
     }
 
     // 2. Save to local SQLite
@@ -103,7 +104,7 @@ class TimetableConstraintsRepository {
         return overrides;
       }
     } catch (e) {
-      print('⚠️ Supabase fetch day overrides error: $e');
+      debugPrint('⚠️ Supabase fetch day overrides error: $e');
     }
 
     // 2. Fallback to SQLite
@@ -146,9 +147,9 @@ class TimetableConstraintsRepository {
       await _supabase
           .from('timetable_day_overrides')
           .upsert(map, onConflict: 'organization_id,day_of_week');
-      print('✅ Synced day override (day ${override.dayOfWeek}) to Supabase');
+      debugPrint('✅ Synced day override (day ${override.dayOfWeek}) to Supabase');
     } catch (e) {
-      print('⚠️ Supabase upsert day override error: $e');
+      debugPrint('⚠️ Supabase upsert day override error: $e');
     }
 
     // 2. Save to SQLite

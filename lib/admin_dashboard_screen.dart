@@ -19,7 +19,6 @@ import 'clock_log_repository.dart';
 import 'database_helper.dart';
 import 'package:csv/csv.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:path_provider/path_provider.dart';
 import 'organization_repository.dart';
 import 'timetable_constraints_repository.dart';
 import 'timetable_day_override.dart';
@@ -61,9 +60,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   // Pagination states
   int _studentPage = 0;
-  int _studentPageSize = 10;
+  final int _studentPageSize = 10;
   int _employeePage = 0;
-  int _employeePageSize = 10;
+  final int _employeePageSize = 10;
 
   int _currentIndex = 0;
   bool _isLoadingData = true;
@@ -127,7 +126,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         _employeeTrend = results[7] as Map<String, double>;
       });
     } catch (e) {
-      print('Error loading admin dashboard data: $e');
+      debugPrint('Error loading admin dashboard data: $e');
     } finally {
       if (mounted) setState(() => _isLoadingData = false);
     }
@@ -290,9 +289,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               decoration: BoxDecoration(
                                 gradient: LinearGradient(
                                   colors: [
-                                    Colors.black.withOpacity(0.35),
-                                    Colors.black.withOpacity(0.0),
-                                    Colors.black.withOpacity(0.6),
+                                    Colors.black.withValues(alpha: 0.35),
+                                    Colors.black.withValues(alpha: 0.0),
+                                    Colors.black.withValues(alpha: 0.6),
                                   ],
                                   begin: Alignment.topCenter,
                                   end: Alignment.bottomCenter,
@@ -309,7 +308,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                     greeting,
                                     style: AppType.body(
                                       context,
-                                      color: Colors.white.withOpacity(0.85),
+                                      color: Colors.white.withValues(alpha: 0.85),
                                       weight: FontWeight.w700,
                                       fontSize: 10,
                                       letterSpacing: 1.2,
@@ -333,7 +332,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                     style: AppType.body(
                                       context,
                                       fontSize: 12,
-                                      color: Colors.white.withOpacity(0.7),
+                                      color: Colors.white.withValues(alpha: 0.7),
                                     ),
                                   ),
                                 ],
@@ -352,7 +351,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         decoration: BoxDecoration(
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(isDark ? 0.3 : 0.05),
+              color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.05),
               blurRadius: 10,
               offset: const Offset(0, -2),
             ),
@@ -430,7 +429,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   decoration: BoxDecoration(
                     boxShadow: [
                       BoxShadow(
-                        color: theme.colorScheme.primary.withOpacity(0.15),
+                        color: theme.colorScheme.primary.withValues(alpha: 0.15),
                         blurRadius: 15,
                         spreadRadius: 1,
                       ),
@@ -457,9 +456,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.primary.withOpacity(0.12),
+                    color: theme.colorScheme.primary.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(100),
-                    border: Border.all(color: theme.colorScheme.primary.withOpacity(0.15), width: 1),
+                    border: Border.all(color: theme.colorScheme.primary.withValues(alpha: 0.15), width: 1),
                   ),
                   child: Text(
                     'ADMIN PORTAL',
@@ -599,7 +598,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return Padding(
       padding: EdgeInsets.only(left: indent + AppSpace.md, right: AppSpace.md, top: AppSpace.xs, bottom: AppSpace.xs),
       child: Material(
-        color: isActive ? activeColor.withOpacity(0.08) : Colors.transparent,
+        color: isActive ? activeColor.withValues(alpha: 0.08) : Colors.transparent,
         borderRadius: AppRadius.mdR,
         child: ListTile(
           onTap: onTap,
@@ -797,7 +796,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           row['status'],
         ]);
       }
-      fileName = '${org.name.replaceAll(' ', '_')}_Students_Attendance_${_analyticsPeriod}.csv';
+      fileName = '${org.name.replaceAll(' ', '_')}_Students_Attendance_$_analyticsPeriod.csv';
     } else {
       String empDateFilter = dateFilter.replaceAll('ar.timestamp', 'cl.clock_in');
       rows.add(['Employee Name', 'Clock In', 'Clock Out', 'Type']);
@@ -818,7 +817,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           row['type'],
         ]);
       }
-      fileName = '${org.name.replaceAll(' ', '_')}_Employees_ClockLogs_${_analyticsPeriod}.csv';
+      fileName = '${org.name.replaceAll(' ', '_')}_Employees_ClockLogs_$_analyticsPeriod.csv';
     }
 
     if (rows.length <= 1) {
@@ -836,10 +835,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final file = File(path);
     await file.writeAsString(csv);
 
-    await Share.shareXFiles(
-      [XFile(path)],
-      text: 'Exported ${_analyticsRole == 'students' ? 'Student Attendance' : 'Employee Clock Logs'} for ${org.name}',
-    );
+    await SharePlus.instance.share(ShareParams(files: [XFile(path)], text: 'Exported ${_analyticsRole == 'students' ? 'Student Attendance' : 'Employee Clock Logs'} for ${org.name}'));
   }
 
   Widget _buildAnalyticsTab(bool isDark) {
@@ -869,19 +865,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: isDark
-                    ? [Colors.indigo.withOpacity(0.15), Colors.purple.withOpacity(0.05)]
-                    : [Colors.indigo.withOpacity(0.06), Colors.purple.withOpacity(0.02)],
+                    ? [Colors.indigo.withValues(alpha: 0.15), Colors.purple.withValues(alpha: 0.05)]
+                    : [Colors.indigo.withValues(alpha: 0.06), Colors.purple.withValues(alpha: 0.02)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
               borderRadius: AppRadius.lgR,
-              border: Border.all(color: Colors.indigo.withOpacity(isDark ? 0.3 : 0.15), width: 1.5),
+              border: Border.all(color: Colors.indigo.withValues(alpha: isDark ? 0.3 : 0.15), width: 1.5),
             ),
             child: Row(
               children: [
                 CircleAvatar(
                   radius: 24,
-                  backgroundColor: Colors.indigo.withOpacity(0.12),
+                  backgroundColor: Colors.indigo.withValues(alpha: 0.12),
                   child: const Icon(Icons.analytics_rounded, color: Colors.indigo, size: 24),
                 ),
                 const SizedBox(width: AppSpace.md),
@@ -1236,6 +1232,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildMiniMetricCard({
     required bool isDark,
     required String title,
@@ -1254,7 +1251,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         children: [
           CircleAvatar(
             radius: 16,
-            backgroundColor: color.withOpacity(0.10),
+            backgroundColor: color.withValues(alpha: 0.10),
             child: Icon(icon, color: color, size: 16),
           ),
           const SizedBox(width: 10),
@@ -1313,10 +1310,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               // Welcome Banner Card
               Card(
                 elevation: 0,
-                color: theme.colorScheme.primary.withOpacity(0.08),
+                color: theme.colorScheme.primary.withValues(alpha: 0.08),
                 shape: RoundedRectangleBorder(
                   borderRadius: AppRadius.lgR,
-                  side: BorderSide(color: theme.colorScheme.primary.withOpacity(0.15), width: 1.5),
+                  side: BorderSide(color: theme.colorScheme.primary.withValues(alpha: 0.15), width: 1.5),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(AppSpace.xl),
@@ -1795,7 +1792,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               children: [
                 CircleAvatar(
                   radius: 16,
-                  backgroundColor: color.withOpacity(0.1),
+                  backgroundColor: color.withValues(alpha: 0.1),
                   child: Icon(icon, color: color, size: 16),
                 ),
                 const Icon(Icons.trending_up_rounded, color: Colors.green, size: 14),
@@ -1912,7 +1909,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   onTap: () => _showStudentMetricsDialog(student),
                   leading: CircleAvatar(
                     radius: 16,
-                    backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.08),
+                    backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
                     child: const Icon(Icons.school_rounded, size: 16),
                   ),
                   title: Text(
@@ -2043,7 +2040,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       // Avatar
                       CircleAvatar(
                         radius: 18,
-                        backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.08),
+                        backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
                         child: const Icon(Icons.work_rounded, size: 16),
                       ),
                       const SizedBox(width: AppSpace.md),
@@ -2065,7 +2062,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: AppColors.indigo.withOpacity(0.08),
+                                    color: AppColors.indigo.withValues(alpha: 0.08),
                                     borderRadius: AppRadius.smR,
                                   ),
                                   child: Text(
@@ -2095,9 +2092,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                         decoration: BoxDecoration(
-                                          color: Colors.teal.withOpacity(0.08),
+                                          color: Colors.teal.withValues(alpha: 0.08),
                                           borderRadius: AppRadius.smR,
-                                          border: Border.all(color: Colors.teal.withOpacity(0.2), width: 1),
+                                          border: Border.all(color: Colors.teal.withValues(alpha: 0.2), width: 1),
                                         ),
                                         child: Row(
                                           mainAxisSize: MainAxisSize.min,
@@ -2105,7 +2102,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                             const Icon(Icons.business_center_rounded, size: 11, color: Colors.teal),
                                             const SizedBox(width: 4),
                                             Text(
-                                              venue!.name,
+                                              venue.name,
                                               style: const TextStyle(
                                                 fontSize: 10,
                                                 fontWeight: FontWeight.w700,
@@ -2138,9 +2135,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                       child: Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                         decoration: BoxDecoration(
-                                          color: Colors.teal.withOpacity(0.08),
+                                          color: Colors.teal.withValues(alpha: 0.08),
                                           borderRadius: AppRadius.smR,
-                                          border: Border.all(color: Colors.teal.withOpacity(0.3), width: 1),
+                                          border: Border.all(color: Colors.teal.withValues(alpha: 0.3), width: 1),
                                         ),
                                         child: Row(
                                           mainAxisSize: MainAxisSize.min,
@@ -2355,7 +2352,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
-                      value: tempRole,
+                      initialValue: tempRole,
                       decoration: const InputDecoration(labelText: 'Role'),
                       items: const [
                         DropdownMenuItem(value: 'teacher', child: Text('Teacher/Educator')),
@@ -2372,7 +2369,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<int?>(
-                      value: tempSelectedVenueId,
+                      initialValue: tempSelectedVenueId,
                       decoration: const InputDecoration(
                         labelText: 'Office / Staff Room (Optional)',
                         prefixIcon: Icon(Icons.business_center_rounded),
@@ -2481,9 +2478,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.orange.withOpacity(0.08),
+                        color: Colors.orange.withValues(alpha: 0.08),
                         borderRadius: AppRadius.mdR,
-                        border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                        border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
                       ),
                       child: const Row(
                         children: [
@@ -2500,7 +2497,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     )
                   else
                     DropdownButtonFormField<int?>(
-                      value: tempSelectedVenueId,
+                      initialValue: tempSelectedVenueId,
                       isExpanded: true,
                       decoration: const InputDecoration(
                         labelText: 'Office / Staff Room',
@@ -2660,6 +2657,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
   }
 
+  // ignore: unused_element
   Widget _buildOrgInfoRow(BuildContext context, String label, String value, bool isDark) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2704,11 +2702,11 @@ class AnalyticsPainter extends CustomPainter {
 
     // Draw horizontal gridlines and percentage values
     final gridPaint = Paint()
-      ..color = isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.05)
+      ..color = isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.05)
       ..strokeWidth = 1
       ..style = PaintingStyle.stroke;
 
-    final double gridLevels = 4;
+    const double gridLevels = 4;
     for (int j = 1; j <= gridLevels; j++) {
       final double yLevel = height * (1 - (j / gridLevels));
       canvas.drawLine(Offset(0, yLevel), Offset(width, yLevel), gridPaint);
@@ -2727,7 +2725,7 @@ class AnalyticsPainter extends CustomPainter {
     }
 
     final bgPaint = Paint()
-      ..color = isDark ? Colors.white.withOpacity(0.04) : Colors.black.withOpacity(0.02)
+      ..color = isDark ? Colors.white.withValues(alpha: 0.04) : Colors.black.withValues(alpha: 0.02)
       ..style = PaintingStyle.fill;
 
     for (int i = 0; i < dataPoints.length; i++) {
@@ -2749,7 +2747,7 @@ class AnalyticsPainter extends CustomPainter {
           Offset(x, height),
           Offset(x, y),
           [
-            barColor.withOpacity(0.4),
+            barColor.withValues(alpha: 0.4),
             barColor,
           ],
         )
@@ -2855,7 +2853,9 @@ class _TimetableConstraintsScreenState extends State<TimetableConstraintsScreen>
     _breakDurController.dispose();
     _lunchDurController.dispose();
     _assemblyDurController.dispose();
-    for (final c in _labelControllers.values) c.dispose();
+    for (final c in _labelControllers.values) {
+      c.dispose();
+    }
     _animController.dispose();
     super.dispose();
   }
@@ -3036,9 +3036,9 @@ class _TimetableConstraintsScreenState extends State<TimetableConstraintsScreen>
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [
-                                  Colors.black.withOpacity(0.45),
-                                  Colors.black.withOpacity(0.1),
-                                  Colors.black.withOpacity(0.6),
+                                  Colors.black.withValues(alpha: 0.45),
+                                  Colors.black.withValues(alpha: 0.1),
+                                  Colors.black.withValues(alpha: 0.6),
                                 ],
                                 begin: Alignment.topCenter,
                                 end: Alignment.bottomCenter,
@@ -3055,7 +3055,7 @@ class _TimetableConstraintsScreenState extends State<TimetableConstraintsScreen>
                                   'TIMETABLE RULES',
                                   style: AppType.body(
                                     context,
-                                    color: Colors.white.withOpacity(0.8),
+                                    color: Colors.white.withValues(alpha: 0.8),
                                     weight: FontWeight.w700,
                                     fontSize: 10,
                                     letterSpacing: 1.2,
@@ -3067,7 +3067,7 @@ class _TimetableConstraintsScreenState extends State<TimetableConstraintsScreen>
                                   style: AppType.body(
                                     context,
                                     fontSize: 12.5,
-                                    color: Colors.white.withOpacity(0.7),
+                                    color: Colors.white.withValues(alpha: 0.7),
                                   ),
                                 ),
                               ],
@@ -3222,7 +3222,7 @@ class _TimetableConstraintsScreenState extends State<TimetableConstraintsScreen>
                               borderRadius: AppRadius.lgR,
                               boxShadow: [
                                 BoxShadow(
-                                  color: primary.withOpacity(0.35),
+                                  color: primary.withValues(alpha: 0.35),
                                   blurRadius: 12,
                                   offset: const Offset(0, 6),
                                 ),
@@ -3291,7 +3291,7 @@ class _TimetableConstraintsScreenState extends State<TimetableConstraintsScreen>
         borderRadius: AppRadius.lgR,
         border: Border.all(color: AppColors.border(isDark)),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4)),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 4)),
         ],
       ),
       child: Column(
@@ -3323,7 +3323,7 @@ class _TimetableConstraintsScreenState extends State<TimetableConstraintsScreen>
                 Positioned.fill(
                   child: Container(
                     decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(0.10),
+                      color: Colors.green.withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(6),
                     ),
                   ),
@@ -3341,7 +3341,7 @@ class _TimetableConstraintsScreenState extends State<TimetableConstraintsScreen>
                       message: seg.label,
                       child: Container(
                         decoration: BoxDecoration(
-                          color: seg.color.withOpacity(0.75),
+                          color: seg.color.withValues(alpha: 0.75),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         alignment: Alignment.center,
@@ -3411,7 +3411,7 @@ class _TimetableConstraintsScreenState extends State<TimetableConstraintsScreen>
           borderRadius: AppRadius.lgR,
           border: Border.all(color: AppColors.border(isDark)),
           boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4)),
+            BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 4)),
           ],
         ),
         child: Column(
@@ -3424,7 +3424,7 @@ class _TimetableConstraintsScreenState extends State<TimetableConstraintsScreen>
                   Container(
                     padding: const EdgeInsets.all(9),
                     decoration: BoxDecoration(
-                      color: color.withOpacity(0.12),
+                      color: color.withValues(alpha: 0.12),
                       borderRadius: AppRadius.mdR,
                     ),
                     child: Icon(icon, size: 18, color: color),
@@ -3446,7 +3446,7 @@ class _TimetableConstraintsScreenState extends State<TimetableConstraintsScreen>
                     Switch(
                       value: toggle,
                       onChanged: onToggle,
-                      activeColor: color,
+                      activeThumbColor: color,
                     ),
                 ],
               ),
@@ -3479,7 +3479,7 @@ class _TimetableConstraintsScreenState extends State<TimetableConstraintsScreen>
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.teal.withOpacity(0.12),
+                color: Colors.teal.withValues(alpha: 0.12),
                 borderRadius: AppRadius.smR,
               ),
               child: const Icon(Icons.calendar_view_week_rounded, color: Colors.teal, size: 18),
@@ -3534,13 +3534,13 @@ class _TimetableConstraintsScreenState extends State<TimetableConstraintsScreen>
         borderRadius: AppRadius.mdR,
         border: Border.all(
           color: isWorking
-              ? dayColor.withOpacity(0.3)
-              : Colors.red.withOpacity(0.25),
+              ? dayColor.withValues(alpha: 0.3)
+              : Colors.red.withValues(alpha: 0.25),
           width: 1.5,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.2 : 0.04),
+            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),
@@ -3558,8 +3558,8 @@ class _TimetableConstraintsScreenState extends State<TimetableConstraintsScreen>
                   width: 40, height: 40,
                   decoration: BoxDecoration(
                     color: isWorking
-                        ? dayColor.withOpacity(0.12)
-                        : Colors.red.withOpacity(0.08),
+                        ? dayColor.withValues(alpha: 0.12)
+                        : Colors.red.withValues(alpha: 0.08),
                     shape: BoxShape.circle,
                   ),
                   child: Center(
@@ -3592,7 +3592,7 @@ class _TimetableConstraintsScreenState extends State<TimetableConstraintsScreen>
                         Text(
                           'No classes scheduled',
                           style: TextStyle(
-                              fontSize: 11, color: Colors.red.withOpacity(0.8)),
+                              fontSize: 11, color: Colors.red.withValues(alpha: 0.8)),
                         ),
                     ],
                   ),
@@ -3614,8 +3614,8 @@ class _TimetableConstraintsScreenState extends State<TimetableConstraintsScreen>
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
                       color: isWorking
-                          ? dayColor.withOpacity(0.12)
-                          : Colors.red.withOpacity(0.08),
+                          ? dayColor.withValues(alpha: 0.12)
+                          : Colors.red.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
                         color: isWorking ? dayColor : Colors.red,
@@ -3671,7 +3671,7 @@ class _TimetableConstraintsScreenState extends State<TimetableConstraintsScreen>
                       ),
                       Switch.adaptive(
                         value: hasCustom,
-                        activeColor: primary,
+                        activeThumbColor: primary,
                         onChanged: (v) {
                           setState(() {
                             if (v) {
@@ -3824,9 +3824,9 @@ class _TimetableConstraintsScreenState extends State<TimetableConstraintsScreen>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.08),
+          color: color.withValues(alpha: 0.08),
           borderRadius: AppRadius.smR,
-          border: Border.all(color: color.withOpacity(0.3), width: 1.2),
+          border: Border.all(color: color.withValues(alpha: 0.3), width: 1.2),
         ),
         child: Row(
           children: [
@@ -3868,9 +3868,9 @@ class _TimetableConstraintsScreenState extends State<TimetableConstraintsScreen>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.06),
+          color: color.withValues(alpha: 0.06),
           borderRadius: AppRadius.mdR,
-          border: Border.all(color: color.withOpacity(0.25), width: 1.5),
+          border: Border.all(color: color.withValues(alpha: 0.25), width: 1.5),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -4019,7 +4019,7 @@ class _OrganizationInfoScreenState extends State<OrganizationInfoScreen>
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        value: selectedType,
+                        initialValue: selectedType,
                         decoration: const InputDecoration(labelText: 'Type', prefixIcon: Icon(Icons.category)),
                         items: const [
                           DropdownMenuItem(value: 'school', child: Text('School')),
@@ -4087,6 +4087,7 @@ class _OrganizationInfoScreenState extends State<OrganizationInfoScreen>
                               country: newCountry,
                             );
                           });
+                          if (!dialogContext.mounted || !context.mounted) return;
                           Navigator.pop(dialogContext); // Close dialog safely
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
@@ -4211,9 +4212,9 @@ class _OrganizationInfoScreenState extends State<OrganizationInfoScreen>
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
-                              Colors.black.withOpacity(0.35),
-                              Colors.black.withOpacity(0.0),
-                              Colors.black.withOpacity(0.6),
+                              Colors.black.withValues(alpha: 0.35),
+                              Colors.black.withValues(alpha: 0.0),
+                              Colors.black.withValues(alpha: 0.6),
                             ],
                             begin: Alignment.topCenter,
                             end: Alignment.bottomCenter,
@@ -4235,9 +4236,9 @@ class _OrganizationInfoScreenState extends State<OrganizationInfoScreen>
                                     width: 60,
                                     height: 60,
                                     decoration: BoxDecoration(
-                                      color: Colors.white.withOpacity(0.18),
+                                      color: Colors.white.withValues(alpha: 0.18),
                                       borderRadius: BorderRadius.circular(16),
-                                      border: Border.all(color: Colors.white.withOpacity(0.3), width: 1.5),
+                                      border: Border.all(color: Colors.white.withValues(alpha: 0.3), width: 1.5),
                                     ),
                                     child: Icon(_typeIcon(org.type), color: Colors.white, size: 30),
                                   ),
@@ -4259,9 +4260,9 @@ class _OrganizationInfoScreenState extends State<OrganizationInfoScreen>
                                         Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                           decoration: BoxDecoration(
-                                            color: Colors.white.withOpacity(0.18),
+                                            color: Colors.white.withValues(alpha: 0.18),
                                             borderRadius: BorderRadius.circular(20),
-                                            border: Border.all(color: Colors.white.withOpacity(0.3)),
+                                            border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
                                           ),
                                           child: Text(
                                             _typeLabel(org.type).toUpperCase(),
@@ -4357,12 +4358,12 @@ class _OrganizationInfoScreenState extends State<OrganizationInfoScreen>
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            tColor.withOpacity(isDark ? 0.25 : 0.08),
-            tColor.withOpacity(isDark ? 0.12 : 0.03),
+            tColor.withValues(alpha: isDark ? 0.25 : 0.08),
+            tColor.withValues(alpha: isDark ? 0.12 : 0.03),
           ],
         ),
         borderRadius: AppRadius.lgR,
-        border: Border.all(color: tColor.withOpacity(0.25), width: 1.5),
+        border: Border.all(color: tColor.withValues(alpha: 0.25), width: 1.5),
       ),
       child: Padding(
         padding: const EdgeInsets.all(AppSpace.xl),
@@ -4373,7 +4374,7 @@ class _OrganizationInfoScreenState extends State<OrganizationInfoScreen>
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: tColor.withOpacity(0.12),
+                    color: tColor.withValues(alpha: 0.12),
                     borderRadius: AppRadius.mdR,
                   ),
                   child: Icon(Icons.vpn_key_rounded, size: 18, color: tColor),
@@ -4446,9 +4447,9 @@ class _OrganizationInfoScreenState extends State<OrganizationInfoScreen>
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       decoration: BoxDecoration(
-                        color: Colors.green.withOpacity(0.12),
+                        color: Colors.green.withValues(alpha: 0.12),
                         borderRadius: AppRadius.mdR,
-                        border: Border.all(color: Colors.green.withOpacity(0.3)),
+                        border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
                       ),
                       child: const Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -4510,7 +4511,7 @@ class _OrganizationInfoScreenState extends State<OrganizationInfoScreen>
         borderRadius: AppRadius.mdR,
         border: Border.all(color: AppColors.border(isDark)),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 2)),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 8, offset: const Offset(0, 2)),
         ],
       ),
       child: Row(
@@ -4519,7 +4520,7 @@ class _OrganizationInfoScreenState extends State<OrganizationInfoScreen>
             width: 38,
             height: 38,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.10),
+              color: color.withValues(alpha: 0.10),
               borderRadius: AppRadius.smR,
             ),
             child: Icon(icon, size: 18, color: color),

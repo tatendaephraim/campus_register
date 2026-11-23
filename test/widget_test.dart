@@ -1,24 +1,20 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter_test/flutter_test.dart';
-import 'package:campus_register/main.dart';
 import 'package:campus_register/role_selection_screen.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 void main() {
-  testWidgets('App starts on RoleSelectionScreen smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const CampusRegisterApp(
-      initialScreen: RoleSelectionScreen(),
-    ));
+  setUpAll(() => GoogleFonts.config.allowRuntimeFetching = false);
 
-    // Verify that the role selection screen is shown.
+  testWidgets('role selection builds at phone size', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.6;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(const MaterialApp(home: RoleSelectionScreen()));
+    await tester.pump(const Duration(seconds: 1));
     expect(find.text('Campus Register'), findsOneWidget);
-    expect(find.text("I'm a Teacher"), findsOneWidget);
+    expect(find.text('VOLUMETRIC 3D TRACKING ENABLED'), findsOneWidget);
+    expect(find.text("I'm an Employee/Educator/Student"), findsOneWidget);
     expect(find.text("I'm a Student"), findsOneWidget);
   });
 }

@@ -4,6 +4,8 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 
 import 'venue.dart' as app_models;
+import 'location_service.dart';
+import 'services/altitude_service.dart';
 import 'venue_repository.dart';
 import 'ui/design_tokens.dart';
 
@@ -30,7 +32,8 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
   );
 
   final List<LatLng> _polygonCorners = [];
-  double _altitude = 1500.0;
+  double? _altitude; // Captured on site; never guessed.
+  double _tolerance = 12.0;
   bool _isCapturingAltitude = false;
   bool _isCapturingCornerGps = false;
 
@@ -40,6 +43,8 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
     if (widget.venue != null) {
       _nameController.text = widget.venue!.name;
       _altitude = widget.venue!.altitude;
+      final saved = widget.venue!.verticalTolerance;
+      if (saved > 0) _tolerance = saved.clamp(2.0, 20.0);
       _category = widget.venue!.category;
       if (widget.venue!.polygonCorners != null) {
         _polygonCorners.addAll(
@@ -69,29 +74,39 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
 
   Future<void> _initCurrentLocation() async {
     try {
-      final pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+      final pos = await Geolocator.getCurrentPosition(locationSettings: const LocationSettings(accuracy: LocationAccuracy.high));
       final controller = await _mapController.future;
       controller.animateCamera(CameraUpdate.newLatLngZoom(LatLng(pos.latitude, pos.longitude), 18));
-      setState(() {
-        _altitude = pos.altitude;
-      });
     } catch (e) {
-      print("Could not get current location on open: $e");
+      debugPrint("Could not get current location on open: $e");
     }
   }
 
   Future<void> _captureAltitude() async {
     setState(() => _isCapturingAltitude = true);
     try {
-      final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.best);
-      final finalAltitude = position.altitude;
-      setState(() {
-        _altitude = finalAltitude;
-      });
+      // Several fixes are fused, because every sign-in is judged against this.
+      final fixes = await LocationService().getFixes(
+        count: 8,
+        timeLimit: const Duration(seconds: 15),
+      );
+      final altitudeService = AltitudeService.instance..start();
+      altitudeService.reset();
+      for (final p in fixes) {
+        if (p.altitude != 0 || p.altitudeAccuracy > 0) {
+          altitudeService.addGnss(p.altitude, p.altitudeAccuracy);
+        }
+      }
+      final estimate = altitudeService.estimate;
+      if (estimate == null) {
+        throw 'this phone has no altitude reading yet. Move near a window.';
+      }
+      if (!mounted) return;
+      setState(() => _altitude = estimate.metres);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Venue altitude captured: ${_altitude.toStringAsFixed(1)}m'),
+            content: Text('Venue altitude captured: ${estimate.metres.toStringAsFixed(1)}m (± ${estimate.sigma.toStringAsFixed(1)}m)'),
             backgroundColor: AppColors.success,
             behavior: SnackBarBehavior.floating,
           ),
@@ -108,14 +123,14 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
         );
       }
     } finally {
-      setState(() => _isCapturingAltitude = false);
+      if (mounted) setState(() => _isCapturingAltitude = false);
     }
   }
 
   Future<void> _addCornerAtGps() async {
     setState(() => _isCapturingCornerGps = true);
     try {
-      final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.best);
+      final position = await Geolocator.getCurrentPosition();
       final latLng = LatLng(position.latitude, position.longitude);
       setState(() {
         _polygonCorners.add(latLng);
@@ -143,7 +158,7 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
         );
       }
     } finally {
-      setState(() => _isCapturingCornerGps = false);
+      if (mounted) setState(() => _isCapturingCornerGps = false);
     }
   }
 
@@ -153,6 +168,18 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Under system rules, a class geofence must have at least 3 corners marked.'),
+            backgroundColor: AppColors.danger,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+
+      final altitude = _altitude;
+      if (altitude == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Stand in the room and tap "Capture floor" first. The 3D check needs the real floor altitude.'),
             backgroundColor: AppColors.danger,
             behavior: SnackBarBehavior.floating,
           ),
@@ -180,9 +207,9 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
         category: _category,
         latitude: centerLat,
         longitude: centerLng,
-        altitude: _altitude,
+        altitude: altitude,
         radius: 50.0, // Default horizontal tolerance radius
-        verticalTolerance: 12.0, // Height limit tolerance set to 12 meters
+        verticalTolerance: _tolerance,
         polygonCorners: modelCorners,
       );
 
@@ -250,7 +277,7 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
                             points: _polygonCorners,
                             strokeColor: theme.colorScheme.primary,
                             strokeWidth: 3,
-                            fillColor: theme.colorScheme.primary.withOpacity(0.2),
+                            fillColor: theme.colorScheme.primary.withValues(alpha: 0.2),
                           )
                         }
                       : {},
@@ -259,7 +286,7 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
                   top: 16,
                   left: 16,
                   child: Card(
-                    color: AppColors.slate950.withOpacity(0.8),
+                    color: AppColors.slate950.withValues(alpha: 0.8),
                     elevation: 4,
                     shape: RoundedRectangleBorder(borderRadius: AppRadius.mdR),
                     child: Padding(
@@ -293,7 +320,7 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                     blurRadius: 10,
                     offset: const Offset(0, -5),
                   ),
@@ -324,7 +351,7 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
                           decoration: BoxDecoration(
                             color: isDark ? AppColors.slate900 : AppColors.slate100,
                             borderRadius: AppRadius.mdR,
-                            border: Border.all(color: theme.colorScheme.secondary.withOpacity(0.2), width: 1),
+                            border: Border.all(color: theme.colorScheme.secondary.withValues(alpha: 0.2), width: 1),
                           ),
                           child: Row(
                             children: [
@@ -372,7 +399,7 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
                         decoration: BoxDecoration(
                           color: isDark ? AppColors.slate900 : AppColors.slate100,
                           borderRadius: AppRadius.mdR,
-                          border: Border.all(color: AppColors.indigo.withOpacity(0.15), width: 1),
+                          border: Border.all(color: AppColors.indigo.withValues(alpha: 0.15), width: 1),
                         ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -387,12 +414,12 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    '${_altitude.toStringAsFixed(1)}m',
+                                    _altitude == null ? 'Not captured' : '${_altitude!.toStringAsFixed(1)}m',
                                     style: AppType.data(context, fontSize: 19, weight: FontWeight.w600, color: AppColors.textPrimary(isDark)),
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    '-8m to +12m volumetric tolerance band',
+                                    '-${_tolerance > 8 ? 8 : _tolerance.round()}m to +${_tolerance.round()}m volumetric tolerance band',
                                     style: AppType.body(context, fontSize: 11.5, color: AppColors.textTertiary(isDark)),
                                   ),
                                 ],
@@ -411,6 +438,24 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
                                   ),
                           ],
                         ),
+                      ),
+                      Row(
+                        children: [
+                          Text(
+                            'Height tolerance',
+                            style: AppType.body(context, fontSize: 11.5, weight: FontWeight.w700, color: AppColors.textSecondary(isDark), letterSpacing: 0.4),
+                          ),
+                          Expanded(
+                            child: Slider(
+                              value: _tolerance,
+                              min: 2,
+                              max: 20,
+                              divisions: 18,
+                              label: '${_tolerance.round()} m',
+                              onChanged: (v) => setState(() => _tolerance = v),
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: AppSpace.md),
                       _isCapturingCornerGps
@@ -514,12 +559,12 @@ class _VenueEditorScreenState extends State<VenueEditorScreen> {
                   decoration: BoxDecoration(
                     color: isSelected
                         ? theme.colorScheme.primary
-                        : theme.colorScheme.primary.withOpacity(0.06),
+                        : theme.colorScheme.primary.withValues(alpha: 0.06),
                     borderRadius: AppRadius.mdR,
                     border: Border.all(
                       color: isSelected
                           ? theme.colorScheme.primary
-                          : theme.colorScheme.primary.withOpacity(0.2),
+                          : theme.colorScheme.primary.withValues(alpha: 0.2),
                       width: 1.5,
                     ),
                   ),

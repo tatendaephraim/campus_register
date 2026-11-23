@@ -163,7 +163,7 @@ class _StudentCourseDetailsScreenState extends State<StudentCourseDetailsScreen>
           children: [
             CircleAvatar(
               radius: 24,
-              backgroundColor: theme.colorScheme.primary.withOpacity(0.12),
+              backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.12),
               child: Icon(Icons.class_rounded, color: theme.colorScheme.primary, size: 24),
             ),
             const SizedBox(width: AppSpace.md),
@@ -263,9 +263,9 @@ class _StudentCourseDetailsScreenState extends State<StudentCourseDetailsScreen>
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: AppSpace.xs),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.06),
+        color: color.withValues(alpha: 0.06),
         borderRadius: AppRadius.mdR,
-        border: Border.all(color: color.withOpacity(0.12), width: 1.5),
+        border: Border.all(color: color.withValues(alpha: 0.12), width: 1.5),
       ),
       child: Column(
         children: [
@@ -327,10 +327,10 @@ class _StudentCourseDetailsScreenState extends State<StudentCourseDetailsScreen>
                     margin: const EdgeInsets.only(bottom: AppSpace.sm),
                     padding: const EdgeInsets.symmetric(horizontal: AppSpace.md, vertical: 12),
                     decoration: BoxDecoration(
-                      color: isDark ? AppColors.slate900.withOpacity(0.5) : AppColors.slate50,
+                      color: isDark ? AppColors.slate900.withValues(alpha: 0.5) : AppColors.slate50,
                       borderRadius: AppRadius.mdR,
                       border: Border.all(
-                        color: isToday ? theme.colorScheme.primary.withOpacity(0.4) : AppColors.border(isDark),
+                        color: isToday ? theme.colorScheme.primary.withValues(alpha: 0.4) : AppColors.border(isDark),
                         width: isToday ? 1.5 : 1,
                       ),
                     ),
@@ -365,7 +365,7 @@ class _StudentCourseDetailsScreenState extends State<StudentCourseDetailsScreen>
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: theme.colorScheme.primary.withOpacity(0.12),
+                              color: theme.colorScheme.primary.withValues(alpha: 0.12),
                               borderRadius: AppRadius.smR,
                             ),
                             child: Text(
@@ -444,7 +444,7 @@ class _StudentCourseDetailsScreenState extends State<StudentCourseDetailsScreen>
                         circleId: CircleId(_venue!.id.toString()),
                         center: center,
                         radius: _venue!.radius,
-                        fillColor: theme.colorScheme.primary.withOpacity(0.12),
+                        fillColor: theme.colorScheme.primary.withValues(alpha: 0.12),
                         strokeColor: theme.colorScheme.primary,
                         strokeWidth: 2,
                       )
@@ -456,7 +456,7 @@ class _StudentCourseDetailsScreenState extends State<StudentCourseDetailsScreen>
                         points: _venue!.polygonCorners!
                             .map((c) => LatLng(c.latitude, c.longitude))
                             .toList(),
-                        fillColor: theme.colorScheme.primary.withOpacity(0.12),
+                        fillColor: theme.colorScheme.primary.withValues(alpha: 0.12),
                         strokeColor: theme.colorScheme.primary,
                         strokeWidth: 2,
                       )
@@ -521,7 +521,7 @@ class _StudentCourseDetailsScreenState extends State<StudentCourseDetailsScreen>
                     margin: const EdgeInsets.only(bottom: AppSpace.sm),
                     padding: const EdgeInsets.symmetric(horizontal: AppSpace.md, vertical: 10),
                     decoration: BoxDecoration(
-                      color: isDark ? AppColors.slate900.withOpacity(0.5) : AppColors.slate50,
+                      color: isDark ? AppColors.slate900.withValues(alpha: 0.5) : AppColors.slate50,
                       borderRadius: AppRadius.mdR,
                       border: Border.all(color: AppColors.border(isDark), width: 1),
                     ),
@@ -530,7 +530,7 @@ class _StudentCourseDetailsScreenState extends State<StudentCourseDetailsScreen>
                         Icon(
                           Icons.check_circle_outline_rounded,
                           size: 16,
-                          color: theme.colorScheme.primary.withOpacity(0.7),
+                          color: theme.colorScheme.primary.withValues(alpha: 0.7),
                         ),
                         const SizedBox(width: AppSpace.md),
                         Expanded(
@@ -622,9 +622,9 @@ class _StudentCourseDetailsScreenState extends State<StudentCourseDetailsScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: AppRadius.smR,
-        border: Border.all(color: color.withOpacity(0.2), width: 1.5),
+        border: Border.all(color: color.withValues(alpha: 0.2), width: 1.5),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

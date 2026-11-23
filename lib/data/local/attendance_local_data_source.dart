@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import '../models/attendance_record.dart';
@@ -59,9 +60,9 @@ class AttendanceLocalDataSource {
           '"${record.venueDescription ?? ""}",${record.location},'
           '${record.latitude},${record.longitude},${record.altitude},${record.estimatedFloor}\n';
       await file.writeAsString(line, mode: FileMode.append);
-      print('📄 Backup to CSV completed');
+      debugPrint('📄 Backup to CSV completed');
     } catch (e) {
-      print('⚠️ CSV backup failed: $e');
+      debugPrint('⚠️ CSV backup failed: $e');
     }
   }
 
@@ -85,7 +86,7 @@ class AttendanceLocalDataSource {
     }
 
     await file.writeAsString(buffer.toString());
-    print('📊 Exported ${records.length} records to ${file.path}');
+    debugPrint('📊 Exported ${records.length} records to ${file.path}');
     return file.path;
   }
 

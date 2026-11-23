@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'database_helper.dart';
@@ -18,9 +19,9 @@ class AttendanceWaiverRepository {
           .select()
           .single();
       supabaseWaiver = AttendanceWaiver.fromMap(response);
-      print('✅ Synced waiver to Supabase');
+      debugPrint('✅ Synced waiver to Supabase');
     } catch (e) {
-      print('⚠️ Supabase waiver insert error: $e');
+      debugPrint('⚠️ Supabase waiver insert error: $e');
     }
 
     // 2. Save locally
@@ -44,7 +45,7 @@ class AttendanceWaiverRepository {
           .eq('student_id', studentId);
       return response.map((item) => AttendanceWaiver.fromMap(item as Map<String, dynamic>)).toList();
     } catch (e) {
-      print('⚠️ Supabase fetch waivers error: $e');
+      debugPrint('⚠️ Supabase fetch waivers error: $e');
     }
 
     final db = await dbHelper.database;

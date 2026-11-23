@@ -139,7 +139,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
-                            color: AppColors.sky.withOpacity(0.1),
+                            color: AppColors.sky.withValues(alpha: 0.1),
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(Icons.cloud_sync_rounded, color: AppColors.sky),
@@ -196,7 +196,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 leading: Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: AppColors.danger.withOpacity(0.1),
+                    color: AppColors.danger.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(Icons.delete_sweep_rounded, color: AppColors.danger),
@@ -262,17 +262,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     
                     _buildCategoryHeader(context, 'APP CONFIGURATION'),
                     const SizedBox(height: AppSpace.sm),
-                    Card(
+                    const Card(
                       child: Column(
                         children: [
-                          const ListTile(
+                          ListTile(
                             leading: Icon(Icons.vibration_rounded),
                             title: Text('Haptic feedback'),
                             subtitle: Text('Vibrate on successful check-in scan'),
                             trailing: Icon(Icons.check_rounded, color: AppColors.success),
                           ),
-                          const Divider(height: 1),
-                          const ListTile(
+                          Divider(height: 1),
+                          ListTile(
                             leading: Icon(Icons.location_on_outlined),
                             title: Text('GPS precision'),
                             subtitle: Text('High accuracy mode for 3D checking'),
@@ -325,8 +325,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         padding: const EdgeInsets.symmetric(vertical: AppSpace.md),
         decoration: BoxDecoration(
           color: isSelected
-              ? theme.colorScheme.primary.withOpacity(0.08)
-              : (isDark ? AppColors.slate900.withOpacity(0.4) : AppColors.slate100),
+              ? theme.colorScheme.primary.withValues(alpha: 0.08)
+              : (isDark ? AppColors.slate900.withValues(alpha: 0.4) : AppColors.slate100),
           borderRadius: AppRadius.mdR,
           border: Border.all(
             color: isSelected
@@ -410,7 +410,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               boxShadow: [
                 BoxShadow(
-                  color: color.withOpacity(0.3),
+                  color: color.withValues(alpha: 0.3),
                   blurRadius: 8,
                   offset: const Offset(0, 3),
                 )

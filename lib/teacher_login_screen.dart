@@ -2,7 +2,6 @@ import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
@@ -20,7 +19,9 @@ import 'student_repository.dart';
 import 'organization_repository.dart';
 import 'pending_approval_screen.dart';
 import 'role_selection_screen.dart';
+import 'services/device_identity.dart';
 import 'ui/design_tokens.dart';
+import 'utils/utils.dart';
 
 class TeacherLoginScreen extends StatefulWidget {
   final bool initialSignUpMode;
@@ -90,17 +91,7 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> with SingleTick
         builder: (context) => const Center(child: CircularProgressIndicator()),
       );
 
-      String? currentDeviceId;
-      try {
-        final deviceInfo = DeviceInfoPlugin();
-        if (Platform.isAndroid) {
-          final androidInfo = await deviceInfo.androidInfo;
-          currentDeviceId = androidInfo.id;
-        } else if (Platform.isIOS) {
-          final iosInfo = await deviceInfo.iosInfo;
-          currentDeviceId = iosInfo.identifierForVendor;
-        }
-      } catch (_) {}
+      final currentDeviceId = await DeviceIdentity.current();
 
       if (context.mounted) {
         Navigator.of(context).pop(); // dismiss loading
@@ -190,6 +181,7 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> with SingleTick
     }
   }
 
+  // ignore: unused_element
   Future<void> _handleGoogleSignIn(BuildContext context) async {
     setState(() => _isLoading = true);
     final authService = GoogleAuthService();
@@ -230,15 +222,14 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> with SingleTick
         await file.writeAsString(savedTeacher.email);
       } catch (_) {}
 
+      if (!mounted || !context.mounted) return;
       setState(() => _isLoading = false);
-
-      if (!mounted) return;
 
       // Navigate to the dashboard, replacing the login screen.
       _navigateToDashboard(context, savedTeacher);
     } else {
+      if (!mounted || !context.mounted) return;
       setState(() => _isLoading = false);
-      if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -544,7 +535,7 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> with SingleTick
       if (selectedTeacher != null && context.mounted) {
         if (selectedTeacher.isApproved == 0) {
           final org = await orgRepo.getOrganizationById(selectedTeacher.organizationId!);
-          if (!mounted) return;
+          if (!context.mounted) return;
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(
               builder: (context) => PendingApprovalScreen(
@@ -564,6 +555,7 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> with SingleTick
           await file.writeAsString(selectedTeacher.email);
         } catch (_) {}
 
+        if (!context.mounted) return;
         _navigateToDashboard(context, selectedTeacher);
       }
     } else {
@@ -585,6 +577,7 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> with SingleTick
     }
   }
 
+  // ignore: unused_element
   Widget _buildCourseDashboardCard(
     BuildContext context,
     ThemeData theme,
@@ -600,6 +593,7 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> with SingleTick
     );
   }
 
+  // ignore: unused_element
   Widget _buildActionCard(
     BuildContext context, {
     required String title,
@@ -803,7 +797,7 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> with SingleTick
                           ),
                           const SizedBox(height: AppSpace.md),
                           DropdownButtonFormField<String>(
-                            value: _orgType,
+                            initialValue: _orgType,
                             decoration: const InputDecoration(
                               labelText: 'Organization Type',
                               prefixIcon: Icon(Icons.category_rounded),
@@ -929,6 +923,7 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> with SingleTick
                       ),
                       
                       // Developer Bypass
+                      if (devBypassEnabled) ...[
                       const Divider(height: 48),
                       OutlinedButton.icon(
                         icon: const Icon(Icons.developer_mode_rounded),
@@ -941,6 +936,7 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> with SingleTick
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         ),
                       ),
+                      ],
                     ],
                   ),
                 ),

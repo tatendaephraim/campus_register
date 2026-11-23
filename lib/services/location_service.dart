@@ -1,12 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import '../data/models/venue.dart';
 
 class LocationService {
   Future<Position> getCurrentLocation() async {
-    return await Geolocator.getCurrentPosition(
-        desiredAccuracy:
-            LocationAccuracy.best // Best accuracy is required for altitude
-        );
+    return await Geolocator.getCurrentPosition();
   }
 
   double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
@@ -73,16 +71,16 @@ class LocationService {
           'Radius ${distance.toStringAsFixed(1)}m (max: ${horizontalRadius.toStringAsFixed(0)}m)';
     }
 
-    print('📍 Location Debug:');
-    print('   Method: $horizontalMethod');
-    print('   Current: ${current.latitude}, ${current.longitude}');
-    print('   Target: $targetLat, $targetLong');
-    print('   Horizontal match: ${horizontalMatch ? "✓" : "✗"}');
-    print(
+    debugPrint('📍 Location Debug:');
+    debugPrint('   Method: $horizontalMethod');
+    debugPrint('   Current: ${current.latitude}, ${current.longitude}');
+    debugPrint('   Target: $targetLat, $targetLong');
+    debugPrint('   Horizontal match: ${horizontalMatch ? "✓" : "✗"}');
+    debugPrint(
         '   Altitude diff: ${verticalDifference.toStringAsFixed(1)}m (max: ${verticalTolerance.toStringAsFixed(0)}m)');
-    print('   Current alt: ${current.altitude.toStringAsFixed(1)}m');
-    print('   Target alt: ${targetAlt.toStringAsFixed(1)}m');
-    print('   Altitude match: ${altitudeMatch ? "✓" : "✗"}');
+    debugPrint('   Current alt: ${current.altitude.toStringAsFixed(1)}m');
+    debugPrint('   Target alt: ${targetAlt.toStringAsFixed(1)}m');
+    debugPrint('   Altitude match: ${altitudeMatch ? "✓" : "✗"}');
 
     return horizontalMatch && altitudeMatch;
   }

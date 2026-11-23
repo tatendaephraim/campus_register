@@ -316,7 +316,7 @@ class _EditCourseScreenState extends State<EditCourseScreen> {
         }
         final venues = snapshot.data!;
         return DropdownButtonFormField<int>(
-          value: _selectedVenueId,
+          initialValue: _selectedVenueId,
           decoration: const InputDecoration(
             labelText: 'Venue',
             prefixIcon: Icon(Icons.spatial_tracking_rounded),

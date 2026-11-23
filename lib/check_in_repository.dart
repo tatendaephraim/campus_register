@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -10,7 +11,23 @@ import 'student_repository.dart';
 /// Repository for handling the check-in process.
 class CheckInRepository {
   final dbHelper = DatabaseHelper.instance;
-  final _supabase = Supabase.instance.client;
+  final SupabaseClient _supabase;
+
+  CheckInRepository({SupabaseClient? client})
+      : _supabase = client ?? Supabase.instance.client;
+
+  static int _lastLocalId = 0;
+
+  /// Ids for records the server has not stored yet. They are negative so that
+  /// they can never be mistaken for, or overwritten by, a server row's id.
+  static int _newLocalId() {
+    final now = -DateTime.now().microsecondsSinceEpoch;
+    _lastLocalId = now < _lastLocalId ? now : _lastLocalId - 1;
+    return _lastLocalId;
+  }
+
+  Map<String, dynamic> _localMap(AttendanceRecord record) =>
+      record.toMap()..['id'] = record.id ?? _newLocalId();
 
   /// Inserts a new attendance record into the database.
   ///
@@ -22,9 +39,7 @@ class CheckInRepository {
     AttendanceRecord? supabaseRecord;
     try {
       final map = record.toMap();
-      if (record.id == null) {
-        map.remove('id');
-      }
+      map.remove('id');
 
       final response = await _supabase
           .from('attendance_records')
@@ -33,16 +48,16 @@ class CheckInRepository {
           .single();
       
       supabaseRecord = AttendanceRecord.fromMap(response);
-      print('✅ Synced AttendanceRecord to Supabase: ID=${supabaseRecord.id}');
+      debugPrint('✅ Synced AttendanceRecord to Supabase: ID=${supabaseRecord.id}');
     } catch (e) {
-      print('⚠️ Supabase AttendanceRecord insert error: $e');
+      debugPrint('⚠️ Supabase AttendanceRecord insert error: $e');
     }
 
     // 2. Save locally (using Supabase-generated ID if available)
     final localRecord = supabaseRecord ?? record;
     await db.insert(
       'attendance_records',
-      localRecord.toMap(),
+      _localMap(localRecord),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
@@ -68,7 +83,7 @@ class CheckInRepository {
       if (response.isNotEmpty) {
         // Cache locally as a best-effort
         final db = await dbHelper.database;
-        final record = AttendanceRecord.fromMap(response.first as Map<String, dynamic>);
+        final record = AttendanceRecord.fromMap(response.first);
         await db.insert(
           'attendance_records',
           record.toMap(),
@@ -77,7 +92,7 @@ class CheckInRepository {
         return true;
       }
     } catch (e) {
-      print('⚠️ Supabase check if checked in today error: $e');
+      debugPrint('⚠️ Supabase check if checked in today error: $e');
     }
 
     // Fallback to SQLite
@@ -125,7 +140,7 @@ class CheckInRepository {
 
       return records;
     } catch (e) {
-      print('⚠️ Supabase fetch records for slot error: $e');
+      debugPrint('⚠️ Supabase fetch records for slot error: $e');
     }
 
     // Fallback to SQLite
@@ -174,9 +189,9 @@ class CheckInRepository {
           .select();
       
       syncedRecords = response.map((item) => AttendanceRecord.fromMap(item as Map<String, dynamic>)).toList();
-      print('✅ Synced batch ABSENT records to Supabase');
+      debugPrint('✅ Synced batch ABSENT records to Supabase');
     } catch (e) {
-      print('⚠️ Supabase batch create absent records error: $e');
+      debugPrint('⚠️ Supabase batch create absent records error: $e');
     }
 
     // 2. Save locally
@@ -198,7 +213,7 @@ class CheckInRepository {
           latitude: 0,
           longitude: 0,
         );
-        batch.insert('attendance_records', absentRecord.toMap(), conflictAlgorithm: ConflictAlgorithm.ignore);
+        batch.insert('attendance_records', _localMap(absentRecord), conflictAlgorithm: ConflictAlgorithm.ignore);
       }
     }
     await batch.commit(noResult: true);
@@ -244,7 +259,7 @@ class CheckInRepository {
           existingId = response['id'] as int?;
         }
       } catch (e) {
-        print('⚠️ Supabase check existing status error: $e');
+        debugPrint('⚠️ Supabase check existing status error: $e');
       }
     }
 
@@ -256,13 +271,15 @@ class CheckInRepository {
       };
       
       try {
-        await _supabase
-            .from('attendance_records')
-            .update(updatedMap)
-            .eq('id', existingId);
-        print('✅ Updated attendance status on Supabase');
+        if (existingId > 0) {
+          await _supabase
+              .from('attendance_records')
+              .update(updatedMap)
+              .eq('id', existingId);
+        }
+        debugPrint('✅ Updated attendance status on Supabase');
       } catch (e) {
-        print('⚠️ Supabase update attendance status error: $e');
+        debugPrint('⚠️ Supabase update attendance status error: $e');
       }
 
       await db.update('attendance_records',
@@ -378,7 +395,7 @@ class CheckInRepository {
       }
       
       if (newAbsentRecords.isNotEmpty) {
-        print("Backfilling ${newAbsentRecords.length} ABSENT records...");
+        debugPrint("Backfilling ${newAbsentRecords.length} ABSENT records...");
         
         try {
           final List<Map<String, dynamic>> mapsToInsert = newAbsentRecords.map((record) {
@@ -398,18 +415,18 @@ class CheckInRepository {
             batch.insert('attendance_records', record.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
           }
           await batch.commit(noResult: true);
-          print("✅ Synced and saved backfilled ABSENT records");
+          debugPrint("✅ Synced and saved backfilled ABSENT records");
         } catch (e) {
-          print("⚠️ Supabase backfill insert error, saving locally only: $e");
+          debugPrint("⚠️ Supabase backfill insert error, saving locally only: $e");
           final batch = db.batch();
           for (final record in newAbsentRecords) {
-            batch.insert('attendance_records', record.toMap(), conflictAlgorithm: ConflictAlgorithm.ignore);
+            batch.insert('attendance_records', _localMap(record), conflictAlgorithm: ConflictAlgorithm.ignore);
           }
           await batch.commit(noResult: true);
         }
       }
     } catch (e, stack) {
-      print("Error in backfillAbsentRecords: $e\n$stack");
+      debugPrint("Error in backfillAbsentRecords: $e\n$stack");
     }
   }
 
@@ -430,7 +447,7 @@ class CheckInRepository {
           .lt('timestamp', endOfDay.toIso8601String());
       
       if (response.isNotEmpty) {
-        final record = AttendanceRecord.fromMap(response.first as Map<String, dynamic>);
+        final record = AttendanceRecord.fromMap(response.first);
         // Cache locally
         final db = await dbHelper.database;
         await db.insert(
@@ -441,7 +458,7 @@ class CheckInRepository {
         return record;
       }
     } catch (e) {
-      print('⚠️ Supabase getAttendanceRecordToday error: $e');
+      debugPrint('⚠️ Supabase getAttendanceRecordToday error: $e');
     }
 
     // SQLite fallback
@@ -470,14 +487,17 @@ class CheckInRepository {
     final db = await dbHelper.database;
 
     // 1. Try syncing to Supabase if online
+    // A record the server has not stored yet is uploaded whole by syncPending.
     try {
-      await _supabase
-          .from('attendance_records')
-          .update({'checked_out_at': checkoutTime})
-          .eq('id', recordId);
-      print('✅ Synced check-out to Supabase: ID=$recordId');
+      if (recordId > 0) {
+        await _supabase
+            .from('attendance_records')
+            .update({'checked_out_at': checkoutTime})
+            .eq('id', recordId);
+        debugPrint('✅ Synced check-out to Supabase: ID=$recordId');
+      }
     } catch (e) {
-      print('⚠️ Supabase check-out update error: $e');
+      debugPrint('⚠️ Supabase check-out update error: $e');
     }
 
     // 2. Save locally
@@ -487,5 +507,65 @@ class CheckInRepository {
       where: 'id = ?',
       whereArgs: [recordId],
     );
+  }
+
+  static Future<int>? _syncing;
+
+  /// Uploads attendance that was recorded offline. Returns how many records
+  /// were uploaded. Concurrent calls share one run.
+  Future<int> syncPending() =>
+      _syncing ??= _syncPending().whenComplete(() => _syncing = null);
+
+  Future<int> _syncPending() async {
+    final db = await dbHelper.database;
+    // Automatic absences are derived data, so the server's own copy wins.
+    final rows = await db.query(
+      'attendance_records',
+      where: "id < 0 AND type != 'AUTO'",
+      orderBy: 'id DESC',
+    );
+    var uploaded = 0;
+    for (final row in rows) {
+      final local = AttendanceRecord.fromMap(row);
+      try {
+        // An earlier upload may have arrived without its reply getting back.
+        final existing = await _supabase
+            .from('attendance_records')
+            .select()
+            .eq('student_id', local.studentId)
+            .eq('timetable_slot_id', local.timetableSlotId)
+            .eq('timestamp', local.timestamp.toIso8601String())
+            .limit(1);
+        final Map<String, dynamic> stored;
+        if (existing.isNotEmpty) {
+          stored = existing.first;
+          if (local.checkedOutAt != null && stored['checked_out_at'] == null) {
+            await _supabase
+                .from('attendance_records')
+                .update({'checked_out_at': local.checkedOutAt!.toIso8601String()})
+                .eq('id', stored['id'] as int);
+            stored['checked_out_at'] = local.checkedOutAt!.toIso8601String();
+          }
+        } else {
+          stored = await _supabase
+              .from('attendance_records')
+              .insert(local.toMap()..remove('id'))
+              .select()
+              .single();
+        }
+        final saved = AttendanceRecord.fromMap(stored);
+        await db.transaction((txn) async {
+          await txn.delete('attendance_records',
+              where: 'id = ?', whereArgs: [local.id]);
+          await txn.insert('attendance_records', saved.toMap(),
+              conflictAlgorithm: ConflictAlgorithm.replace);
+        });
+        uploaded++;
+      } catch (e) {
+        debugPrint('⚠️ Pending attendance not uploaded yet: $e');
+        break;
+      }
+    }
+    return uploaded;
   }
 }

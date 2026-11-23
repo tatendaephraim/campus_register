@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/attendance_record.dart';
 
@@ -8,15 +9,15 @@ class GoogleSheetsApi {
 
   Future<bool> syncRecord(AttendanceRecord record) async {
     try {
-      print('📤 Starting Google Sheets sync...');
-      print('🔗 URL: $_url');
+      debugPrint('📤 Starting Google Sheets sync...');
+      debugPrint('🔗 URL: $_url');
 
       // Use the toSyncData method which has all the fields
       final syncData = record.toSyncData();
 
-      print('📊 Data to send:');
+      debugPrint('📊 Data to send:');
       syncData.forEach((key, value) {
-        print('  $key: $value');
+        debugPrint('  $key: $value');
       });
 
       final response = await http.post(
@@ -40,18 +41,18 @@ class GoogleSheetsApi {
       ).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
-          print('⏱️ Request timed out after 10 seconds');
+          debugPrint('⏱️ Request timed out after 10 seconds');
           throw Exception('Request timeout');
         },
       );
 
-      print('📥 Response status: ${response.statusCode}');
-      print('📥 Response body: ${response.body}');
-      print('📥 Response headers: ${response.headers}');
+      debugPrint('📥 Response status: ${response.statusCode}');
+      debugPrint('📥 Response body: ${response.body}');
+      debugPrint('📥 Response headers: ${response.headers}');
 
       // Google Apps Script returns 302 redirect - this is NORMAL and means success
       if (response.statusCode == 302) {
-        print(
+        debugPrint(
             "✅ Sync Successful (302 redirect): ${record.name} at ${record.venueName}");
         return true;
       }
@@ -59,22 +60,22 @@ class GoogleSheetsApi {
       if (response.statusCode == 200) {
         if (response.body.contains('Success') ||
             response.body.contains('success')) {
-          print("✅ Sync Successful: ${record.name} at ${record.venueName}");
+          debugPrint("✅ Sync Successful: ${record.name} at ${record.venueName}");
           return true;
         } else {
-          print("⚠️ Unexpected response: ${response.body}");
+          debugPrint("⚠️ Unexpected response: ${response.body}");
           // Even if body is unexpected, status 200 means it was received
-          print("✅ Accepting as success due to 200 status");
+          debugPrint("✅ Accepting as success due to 200 status");
           return true;
         }
       } else {
-        print("❌ Sync Failed with status: ${response.statusCode}");
-        print("❌ Response: ${response.body}");
+        debugPrint("❌ Sync Failed with status: ${response.statusCode}");
+        debugPrint("❌ Response: ${response.body}");
         return false;
       }
     } catch (e, stackTrace) {
-      print("⚠️ Connection Error: $e");
-      print("⚠️ Stack trace: $stackTrace");
+      debugPrint("⚠️ Connection Error: $e");
+      debugPrint("⚠️ Stack trace: $stackTrace");
       return false;
     }
   }

@@ -1,12 +1,10 @@
 import 'dart:io';
 
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'database_helper.dart';
-import 'student.dart';
 import 'role_selection_screen.dart';
 import 'student_dashboard_screen.dart';
 import 'student_repository.dart';
@@ -14,6 +12,7 @@ import 'teacher_dashboard_screen.dart';
 import 'admin_dashboard_screen.dart';
 import 'teacher_repository.dart';
 import 'onboarding_screen.dart';
+import 'services/device_identity.dart';
 import 'ui/design_tokens.dart';
 import 'services/theme_service.dart';
 
@@ -23,8 +22,14 @@ void main() async {
 
   // Initialize Supabase
   await Supabase.initialize(
-    url: 'https://omdoceplvstgfmztpcsg.supabase.co',
-    anonKey: 'sb_publishable_CnvAQvdeO82XS52OALVx5A_H1apCkpi',
+    url: const String.fromEnvironment(
+      'SUPABASE_URL',
+      defaultValue: 'https://omdoceplvstgfmztpcsg.supabase.co',
+    ),
+    publishableKey: const String.fromEnvironment(
+      'SUPABASE_KEY',
+      defaultValue: 'sb_publishable_CnvAQvdeO82XS52OALVx5A_H1apCkpi',
+    ),
   );
 
   // Initialize Theme Service
@@ -66,7 +71,7 @@ Future<Widget> _getInitialScreen() async {
       }
     }
   } catch (e) {
-    print('⚠️ Error loading persistently logged-in teacher: $e');
+    debugPrint('⚠️ Error loading persistently logged-in teacher: $e');
   }
 
   final deviceId = await _getDeviceId();
@@ -83,17 +88,7 @@ Future<Widget> _getInitialScreen() async {
 }
 
 /// Gets a unique identifier for the current device.
-Future<String?> _getDeviceId() async {
-  final deviceInfo = DeviceInfoPlugin();
-  if (Platform.isAndroid) {
-    final androidInfo = await deviceInfo.androidInfo;
-    return androidInfo.id;
-  } else if (Platform.isIOS) {
-    final iosInfo = await deviceInfo.iosInfo;
-    return iosInfo.identifierForVendor;
-  }
-  return null;
-}
+Future<String?> _getDeviceId() => DeviceIdentity.current();
 
 class CampusRegisterApp extends StatelessWidget {
   const CampusRegisterApp({super.key});
@@ -119,12 +114,11 @@ class CampusRegisterApp extends StatelessWidget {
               brightness: Brightness.light,
               primary: seedColor,
               secondary: AppColors.amber,
-              background: AppColors.slate50,
               surface: Colors.white,
             ),
             cardTheme: CardThemeData(
               elevation: 0,
-              shadowColor: Colors.black.withOpacity(0.03),
+              shadowColor: Colors.black.withValues(alpha: 0.03),
               shape: RoundedRectangleBorder(
                 borderRadius: AppRadius.xlR,
                 side: const BorderSide(color: AppColors.slate200, width: 1),
@@ -189,14 +183,13 @@ class CampusRegisterApp extends StatelessWidget {
               brightness: Brightness.dark,
               primary: seedColor,
               secondary: AppColors.amberLight,
-              background: AppColors.slate900,
               surface: AppColors.slate800,
             ),
             cardTheme: CardThemeData(
               elevation: 0,
               shape: RoundedRectangleBorder(
                 borderRadius: AppRadius.xlR,
-                side: BorderSide(color: Colors.white.withOpacity(0.06), width: 1),
+                side: BorderSide(color: Colors.white.withValues(alpha: 0.06), width: 1),
               ),
               color: AppColors.slate800,
             ),
@@ -210,7 +203,7 @@ class CampusRegisterApp extends StatelessWidget {
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: AppRadius.mdR,
-                borderSide: BorderSide(color: Colors.white.withOpacity(0.08), width: 1),
+                borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08), width: 1),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: AppRadius.mdR,

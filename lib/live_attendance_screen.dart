@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'attendance_record.dart';
 import 'course.dart';
 import 'student.dart';
 import 'timetable.dart';
@@ -72,6 +71,7 @@ class _LiveAttendanceScreenState extends State<LiveAttendanceScreen> {
         absentStudentIds, widget.slot.id!, now);
 
     // Refresh the view
+    if (!mounted) return;
     _fetchAttendanceStatus();
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -192,7 +192,7 @@ class _LiveAttendanceScreenState extends State<LiveAttendanceScreen> {
                         child: ListTile(
                           contentPadding: const EdgeInsets.symmetric(horizontal: AppSpace.lg, vertical: AppSpace.xs),
                           leading: CircleAvatar(
-                            backgroundColor: theme.colorScheme.primary.withOpacity(0.08),
+                            backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.08),
                             child: Icon(Icons.person_rounded, color: theme.colorScheme.primary),
                           ),
                           title: Text(

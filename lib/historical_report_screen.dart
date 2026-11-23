@@ -172,7 +172,7 @@ class _HistoricalReportScreenState extends State<HistoricalReportScreen> with Si
     final file = File(path);
     await file.writeAsString(csv);
 
-    await Share.shareXFiles([XFile(path)], text: 'Attendance Report for ${widget.course.name}');
+    await SharePlus.instance.share(ShareParams(files: [XFile(path)], text: 'Attendance Report for ${widget.course.name}'));
   }
 
   @override
@@ -232,7 +232,7 @@ class _HistoricalReportScreenState extends State<HistoricalReportScreen> with Si
 
                 // Tab Bar
                 Container(
-                  color: isDark ? AppColors.slate800.withOpacity(0.4) : Colors.white,
+                  color: isDark ? AppColors.slate800.withValues(alpha: 0.4) : Colors.white,
                   child: TabBar(
                     controller: _tabController,
                     indicatorColor: theme.colorScheme.primary,
@@ -267,7 +267,7 @@ class _HistoricalReportScreenState extends State<HistoricalReportScreen> with Si
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpace.lg, vertical: AppSpace.sm),
       child: Card(
-        color: isDark ? AppColors.slate800.withOpacity(0.5) : Colors.white,
+        color: isDark ? AppColors.slate800.withValues(alpha: 0.5) : Colors.white,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpace.md, vertical: AppSpace.xs),
           child: Column(
@@ -466,7 +466,7 @@ class _HistoricalReportScreenState extends State<HistoricalReportScreen> with Si
                           values: rateHistory,
                           labels: rateLabels,
                           lineColor: theme.colorScheme.primary,
-                          gridColor: isDark ? Colors.white.withOpacity(0.08) : AppColors.slate200,
+                          gridColor: isDark ? Colors.white.withValues(alpha: 0.08) : AppColors.slate200,
                           textColor: isDark ? Colors.grey[500]! : AppColors.slate500,
                         ),
                       ),
@@ -546,7 +546,7 @@ class _HistoricalReportScreenState extends State<HistoricalReportScreen> with Si
           margin: const EdgeInsets.only(bottom: AppSpace.sm + 2),
           child: ExpansionTile(
             leading: CircleAvatar(
-              backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
+              backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.1),
               child: Text(
                 name.isNotEmpty ? name[0].toUpperCase() : 'S',
                 style: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.bold),
@@ -563,9 +563,9 @@ class _HistoricalReportScreenState extends State<HistoricalReportScreen> with Si
             trailing: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color: rateColor.withOpacity(0.1),
+                color: rateColor.withValues(alpha: 0.1),
                 borderRadius: AppRadius.smR,
-                border: Border.all(color: rateColor.withOpacity(0.2)),
+                border: Border.all(color: rateColor.withValues(alpha: 0.2)),
               ),
               child: Text(
                 '${(rate * 100).toStringAsFixed(0)}%',
@@ -618,7 +618,7 @@ class _HistoricalReportScreenState extends State<HistoricalReportScreen> with Si
                 height: 160,
                 width: 160,
                 fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) => Icon(
+                errorBuilder: (context, error, stackTrace) => const Icon(
                   Icons.bar_chart_outlined,
                   size: 64,
                   color: AppColors.slate400,
@@ -805,7 +805,7 @@ class CustomPieChartPainter extends CustomPainter {
     if (total == 0) {
       // Draw empty placeholder circle
       final paint = Paint()
-        ..color = Colors.grey.withOpacity(0.2)
+        ..color = Colors.grey.withValues(alpha: 0.2)
         ..style = PaintingStyle.fill;
       canvas.drawCircle(Offset(size.width / 2, size.height / 2), size.width / 2, paint);
       return;
@@ -872,10 +872,10 @@ class CustomLineChartPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final double paddingLeft = 32.0;
-    final double paddingRight = 12.0;
-    final double paddingTop = 12.0;
-    final double paddingBottom = 20.0;
+    const double paddingLeft = 32.0;
+    const double paddingRight = 12.0;
+    const double paddingTop = 12.0;
+    const double paddingBottom = 20.0;
 
     final double chartWidth = size.width - paddingLeft - paddingRight;
     final double chartHeight = size.height - paddingTop - paddingBottom;
@@ -921,7 +921,7 @@ class CustomLineChartPainter extends CustomPainter {
       ..shader = LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
-        colors: [lineColor.withOpacity(0.25), lineColor.withOpacity(0.0)],
+        colors: [lineColor.withValues(alpha: 0.25), lineColor.withValues(alpha: 0.0)],
       ).createShader(Rect.fromLTWH(paddingLeft, paddingTop, chartWidth, chartHeight));
 
     final double stepX = values.length > 1 ? chartWidth / (values.length - 1) : chartWidth;

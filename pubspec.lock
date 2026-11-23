@@ -177,22 +177,30 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.4.1"
+  dbus:
+    dependency: transitive
+    description:
+      name: dbus
+      sha256: a48d5da28e89bd02196e80d81ed8d7954923d00a0f4a68cc20b575038f023383
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.7.15"
   device_info_plus:
     dependency: "direct main"
     description:
       name: device_info_plus
-      sha256: a7fd703482b391a87d60b6061d04dfdeab07826b96f9abd8f5ed98068acc0074
+      sha256: ade1c36f8355d6284c98e4a47992ea263887ed3d1acb281e37635dd45f04c4aa
       url: "https://pub.dev"
     source: hosted
-    version: "10.1.2"
+    version: "13.3.0"
   device_info_plus_platform_interface:
     dependency: transitive
     description:
       name: device_info_plus_platform_interface
-      sha256: e1ea89119e34903dca74b883d0dd78eb762814f97fb6c76f35e9ff74d261a18f
+      sha256: "04b173a92e2d9161dfead145667037c8d834db725ce2e7b942bfe18fd2f45a46"
       url: "https://pub.dev"
     source: hosted
-    version: "7.0.3"
+    version: "8.1.0"
   fake_async:
     dependency: transitive
     description:
@@ -205,10 +213,18 @@ packages:
     dependency: transitive
     description:
       name: ffi
-      sha256: d07d37192dbf97461359c1518788f203b0c9102cfd2c35a716b823741219542c
+      sha256: "6d7fd89431262d8f3125e81b50d3847a091d846eafcd4fdb88dd06f36d705a45"
       url: "https://pub.dev"
     source: hosted
-    version: "2.1.5"
+    version: "2.2.0"
+  ffi_leak_tracker:
+    dependency: transitive
+    description:
+      name: ffi_leak_tracker
+      sha256: "4093d4ef9ca06ffe2786e73bfb25e22aa92112b9bb4ec941f11e3e6b61489a97"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.1.2"
   file:
     dependency: transitive
     description:
@@ -288,46 +304,62 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.6.0"
+  geoclue:
+    dependency: transitive
+    description:
+      name: geoclue
+      sha256: c2a998c77474fc57aa00c6baa2928e58f4b267649057a1c76738656e9dbd2a7f
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.1.1"
   geolocator:
     dependency: "direct main"
     description:
       name: geolocator
-      sha256: "149876cc5207a0f5daf4fdd3bfcf0a0f27258b3fe95108fa084f527ad0568f1b"
+      sha256: "2b3bc0f7320d5a5fa02f8209ffcf1aaa7c2cabb7b2bedbc0cfeb5ff2778b8b09"
       url: "https://pub.dev"
     source: hosted
-    version: "12.0.0"
+    version: "14.1.2"
   geolocator_android:
     dependency: transitive
     description:
       name: geolocator_android
-      sha256: fcb1760a50d7500deca37c9a666785c047139b5f9ee15aa5469fae7dbbe3170d
+      sha256: e67583809a1fab5f4a2255902978e2bc095ace9451fde0d9624e54facd0a5c22
       url: "https://pub.dev"
     source: hosted
-    version: "4.6.2"
+    version: "5.2.1"
   geolocator_apple:
     dependency: transitive
     description:
       name: geolocator_apple
-      sha256: dbdd8789d5aaf14cf69f74d4925ad1336b4433a6efdf2fce91e8955dc921bf22
+      sha256: a1e177f3081089724f2095856aeb96eb8d7d1c59e425aed8dd4de7aa2c11ab66
       url: "https://pub.dev"
     source: hosted
-    version: "2.3.13"
+    version: "2.4.3"
+  geolocator_linux:
+    dependency: transitive
+    description:
+      name: geolocator_linux
+      sha256: "3da7420f11c3496511a5bd3c18fd67b88e5659f12e46b7ce00a788f6996e850a"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.2.6"
   geolocator_platform_interface:
     dependency: transitive
     description:
       name: geolocator_platform_interface
-      sha256: "30cb64f0b9adcc0fb36f628b4ebf4f731a2961a0ebd849f4b56200205056fe67"
+      sha256: e012af6b7e2674e7500237ab11e44ac9119e87fd0105e7bb55cde1750e8e5d80
       url: "https://pub.dev"
     source: hosted
-    version: "4.2.6"
+    version: "4.4.1"
   geolocator_web:
     dependency: transitive
     description:
       name: geolocator_web
-      sha256: "7a22f400d831f924a89d931ba126a10e6b8b437f31e6b9311320435f3e1571bd"
+      sha256: "19e485a0f8d6a88abcf9c53cba3a4105e14b7435ed8ac1c108c067b938fe8429"
       url: "https://pub.dev"
     source: hosted
-    version: "4.0.0"
+    version: "4.1.4"
   geolocator_windows:
     dependency: transitive
     description:
@@ -472,6 +504,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.21.0"
+  gsettings:
+    dependency: transitive
+    description:
+      name: gsettings
+      sha256: "1b0ce661f5436d2db1e51f3c4295a49849f03d304003a7ba177d01e3a858249c"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.2.8"
   gtk:
     dependency: transitive
     description:
@@ -524,10 +564,10 @@ packages:
     dependency: "direct main"
     description:
       name: intl
-      sha256: d6f56758b7d3014a48af9701c085700aac781a92a87a62b1333b46d8879661cf
+      sha256: "1ca20c894b1717686a2319b8548763d812bc0aabdac580420a44c5178c57a867"
       url: "https://pub.dev"
     source: hosted
-    version: "0.19.0"
+    version: "0.20.3"
   json_annotation:
     dependency: transitive
     description:
@@ -580,26 +620,26 @@ packages:
     dependency: "direct main"
     description:
       name: local_auth
-      sha256: "434d854cf478f17f12ab29a76a02b3067f86a63a6d6c4eb8fbfdcfe4879c1b7b"
+      sha256: ecf24edf2283c509ecd217e3595f6f71034b68888d28ad1dae6bfa0857b816ac
       url: "https://pub.dev"
     source: hosted
-    version: "2.3.0"
+    version: "3.0.2"
   local_auth_android:
     dependency: transitive
     description:
       name: local_auth_android
-      sha256: a0bdfcc0607050a26ef5b31d6b4b254581c3d3ce3c1816ab4d4f4a9173e84467
+      sha256: e2ceb84cdecefe1bc0ddd4ac308b0f6525bbfa0a60d0e552082b2970e1fb38c2
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.56"
+    version: "2.3.0"
   local_auth_darwin:
     dependency: transitive
     description:
       name: local_auth_darwin
-      sha256: "699873970067a40ef2f2c09b4c72eb1cfef64224ef041b3df9fdc5c4c1f91f49"
+      sha256: "45a9db01b57082bc9d6115cb25eb8fc0b72f43e5f330819bdd8352ecdae87589"
       url: "https://pub.dev"
     source: hosted
-    version: "1.6.1"
+    version: "2.0.5"
   local_auth_platform_interface:
     dependency: transitive
     description:
@@ -612,10 +652,10 @@ packages:
     dependency: transitive
     description:
       name: local_auth_windows
-      sha256: bc4e66a29b0fdf751aafbec923b5bed7ad6ed3614875d8151afe2578520b2ab5
+      sha256: d72b8a441e5e6a679902f87c51529fcce65f442d77598484cf35454c3d733eda
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.11"
+    version: "2.0.2"
   logging:
     dependency: transitive
     description:
@@ -636,10 +676,10 @@ packages:
     dependency: transitive
     description:
       name: matcher
-      sha256: dc0b7dc7651697ea4ff3e69ef44b0407ea32c487a39fff6a4004fa585e901861
+      sha256: "31bd099b47c10cd1aeb55146a2d46ce0277630ecef3f7dae54ad7873f36696cd"
       url: "https://pub.dev"
     source: hosted
-    version: "0.12.19"
+    version: "0.12.20"
   material_color_utilities:
     dependency: transitive
     description:
@@ -652,18 +692,18 @@ packages:
     dependency: transitive
     description:
       name: meta
-      sha256: "1741988757a65eb6b36abe716829688cf01910bbf91c34354ff7ec1c3de2b349"
+      sha256: "307249ce4ff29d58a18e97f6345f539382eb9c9c29ecda628900f31de0443dd9"
       url: "https://pub.dev"
     source: hosted
-    version: "1.18.0"
+    version: "1.19.0"
   mime:
     dependency: transitive
     description:
       name: mime
-      sha256: "801fd0b26f14a4a58ccb09d5892c3fbdeff209594300a542492cf13fba9d247a"
+      sha256: bd47de35f07e27267e69c8c8b22edf9473bfee170a60d60fcc93730c5144b7f6
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.6"
+    version: "2.1.0"
   native_toolchain_c:
     dependency: transitive
     description:
@@ -680,8 +720,24 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "9.3.0"
-  path:
+  package_info_plus:
     dependency: transitive
+    description:
+      name: package_info_plus
+      sha256: "73ef2cd5c11a7548f9b7f6fc2a4f6113de2e64aa2a70de63feede95548822908"
+      url: "https://pub.dev"
+    source: hosted
+    version: "10.2.2"
+  package_info_plus_platform_interface:
+    dependency: transitive
+    description:
+      name: package_info_plus_platform_interface
+      sha256: db762cb2f4f25ee60fb6359773861b0f199e00b90d237bd85a76a1e806b46ef4
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.1.0"
+  path:
+    dependency: "direct main"
     description:
       name: path
       sha256: "75cca69d1490965be98c73ceaea117e8a04dd21217b37b292c9ddbec0d955bc5"
@@ -860,18 +916,18 @@ packages:
     dependency: "direct main"
     description:
       name: share_plus
-      sha256: ef3489a969683c4f3d0239010cc8b7a2a46543a8d139e111c06c558875083544
+      sha256: db40767f130189d53f3ae8a6393c217ff4a492da1baff718a9873679c0c00224
       url: "https://pub.dev"
     source: hosted
-    version: "9.0.0"
+    version: "13.3.1"
   share_plus_platform_interface:
     dependency: transitive
     description:
       name: share_plus_platform_interface
-      sha256: "0f9e4418835d1b2c3ae78fdb918251959106cefdbc4dd43526e182f80e82f6d4"
+      sha256: "365ef7379fc22507256adda3385152942ffce08935452bc972c2e52a0bebae41"
       url: "https://pub.dev"
     source: hosted
-    version: "4.0.0"
+    version: "7.2.0"
   shared_preferences:
     dependency: transitive
     description:
@@ -965,6 +1021,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.5.6"
+  sqflite_common_ffi:
+    dependency: "direct dev"
+    description:
+      name: sqflite_common_ffi
+      sha256: cd0c7f7de39a08f2d54ef144d9058c46eca8461879aaa648025643455c1e5a20
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.4.0+3"
   sqflite_darwin:
     dependency: transitive
     description:
@@ -981,6 +1045,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.4.0"
+  sqlite3:
+    dependency: transitive
+    description:
+      name: sqlite3
+      sha256: f8f8ba7f9454f2761d4b416e030c4528ebc45e9290798d848f4dc08890c42a7c
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.1.7"
   stack_trace:
     dependency: transitive
     description:
@@ -1065,10 +1137,10 @@ packages:
     dependency: transitive
     description:
       name: test_api
-      sha256: "949a932224383300f01be9221c39180316445ecb8e7547f70a41a35bf421fb9e"
+      sha256: "2a122cbe059f8b610d3a5415f42e255b6c17b1f21eee1d960f31080237fb4f11"
       url: "https://pub.dev"
     source: hosted
-    version: "0.7.11"
+    version: "0.7.12"
   typed_data:
     dependency: transitive
     description:
@@ -1177,10 +1249,10 @@ packages:
     dependency: transitive
     description:
       name: vector_math
-      sha256: d530bd74fea330e6e364cda7a85019c434070188383e1cd8d9777ee586914c5b
+      sha256: fa49e1674cb84acb900141714e6c6e1f9ae099827c24d141430ff6819db4e1bc
       url: "https://pub.dev"
     source: hosted
-    version: "2.2.0"
+    version: "2.4.4"
   vm_service:
     dependency: transitive
     description:
@@ -1193,10 +1265,10 @@ packages:
     dependency: transitive
     description:
       name: web
-      sha256: "97da13628db363c635202ad97068d47c5b8aa555808e7a9411963c533b449b27"
+      sha256: e119e82ac4795c7925103b7cf3768191f33941b99e7ccffbd6c645201d9f606b
       url: "https://pub.dev"
     source: hosted
-    version: "0.5.1"
+    version: "1.1.2"
   web_socket:
     dependency: transitive
     description:
@@ -1217,18 +1289,18 @@ packages:
     dependency: transitive
     description:
       name: win32
-      sha256: d7cb55e04cd34096cd3a79b3330245f54cb96a370a1c27adb3c84b917de8b08e
+      sha256: a0b93865d5644f11cf6a8c3f6db909f1ec168958b5805f6cc684adea957cd63d
       url: "https://pub.dev"
     source: hosted
-    version: "5.15.0"
+    version: "6.4.0"
   win32_registry:
     dependency: transitive
     description:
       name: win32_registry
-      sha256: "21ec76dfc731550fd3e2ce7a33a9ea90b828fdf19a5c3bcf556fa992cfa99852"
+      sha256: "73b1d78920a9d6e03f8b4e43e612b87bf3152a0e5c5e5150267762b7c4116904"
       url: "https://pub.dev"
     source: hosted
-    version: "1.1.5"
+    version: "3.0.3"
   xdg_directories:
     dependency: transitive
     description:
@@ -1262,5 +1334,5 @@ packages:
     source: hosted
     version: "2.1.0"
 sdks:
-  dart: ">=3.12.0 <4.0.0"
+  dart: ">=3.13.0 <4.0.0"
   flutter: ">=3.44.0"

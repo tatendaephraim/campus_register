@@ -4,9 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:lottie/lottie.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:device_info_plus/device_info_plus.dart';
-import 'location_service.dart';
+import 'services/volumetric_verifier.dart';
 import 'services/biometric_service.dart';
 
 import 'course.dart';
@@ -23,12 +21,11 @@ import 'database_helper.dart';
 import 'create_course_screen.dart';
 import 'course_details_screen.dart';
 import 'role_selection_screen.dart';
-import 'manage_venues_screen.dart';
-import 'venue_editor_screen.dart';
 import 'venue.dart' as app_models;
 import 'venue_repository.dart';
 import 'about_screen.dart';
 import 'settings_screen.dart';
+import 'services/device_identity.dart';
 import 'ui/design_tokens.dart';
 
 /// The main screen for a logged-in teacher.
@@ -109,7 +106,7 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
       final db = await DatabaseHelper.instance.database;
       final refreshed = await _teacherRepo.getTeacherByEmail(widget.teacher.email);
       if (refreshed.id != null && refreshed.id != teacherId) {
-         print('🔄 Dashboard: Migrating courses to Cloud ID ${refreshed.id}');
+         debugPrint('🔄 Dashboard: Migrating courses to Cloud ID ${refreshed.id}');
          // Perform a local migration if IDs don't match
          await db.update('courses', {'teacher_id': refreshed.id}, where: 'teacher_id = ?', whereArgs: [teacherId]);
          if (mounted) {
@@ -120,7 +117,7 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
          }
       }
     } catch (e) {
-      print('⚠️ Dashboard sync error: $e');
+      debugPrint('⚠️ Dashboard sync error: $e');
     }
   }
 
@@ -215,9 +212,9 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
-                              Colors.black.withOpacity(0.35),
-                              Colors.black.withOpacity(0.0),
-                              Colors.black.withOpacity(0.6),
+                              Colors.black.withValues(alpha: 0.35),
+                              Colors.black.withValues(alpha: 0.0),
+                              Colors.black.withValues(alpha: 0.6),
                             ],
                             begin: Alignment.topCenter,
                             end: Alignment.bottomCenter,
@@ -234,7 +231,7 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
                               greeting,
                               style: AppType.body(
                                 context,
-                                color: Colors.white.withOpacity(0.85),
+                                color: Colors.white.withValues(alpha: 0.85),
                                 weight: FontWeight.w700,
                                 fontSize: 10,
                                 letterSpacing: 1.2,
@@ -258,7 +255,7 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
                               style: AppType.body(
                                 context,
                                 fontSize: 12,
-                                color: Colors.white.withOpacity(0.7),
+                                color: Colors.white.withValues(alpha: 0.7),
                               ),
                             ),
                           ],
@@ -387,7 +384,7 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
                                 errorBuilder: (context, error, stackTrace) => Icon(
                                   Icons.school_rounded,
                                   size: 80,
-                                  color: theme.colorScheme.primary.withOpacity(0.1),
+                                  color: theme.colorScheme.primary.withValues(alpha: 0.1),
                                 ),
                               ),
                               const SizedBox(height: AppSpace.xl),
@@ -412,7 +409,7 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
                                 icon: const Icon(Icons.refresh_rounded),
                                 label: const Text('Sync with Cloud'),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
+                                  backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.1),
                                   foregroundColor: theme.colorScheme.primary,
                                 ),
                               ),
@@ -493,7 +490,7 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
                                           Container(
                                             padding: const EdgeInsets.all(AppSpace.md),
                                             decoration: BoxDecoration(
-                                              color: theme.colorScheme.primary.withOpacity(0.08),
+                                              color: theme.colorScheme.primary.withValues(alpha: 0.08),
                                               borderRadius: AppRadius.mdR,
                                             ),
                                             child: Icon(
@@ -655,7 +652,7 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: color.withOpacity(0.12),
+                  color: color.withValues(alpha: 0.12),
                   borderRadius: AppRadius.smR,
                 ),
                 child: Icon(icon, color: color, size: 22),
@@ -712,7 +709,7 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
                   decoration: BoxDecoration(
                     boxShadow: [
                       BoxShadow(
-                        color: theme.colorScheme.primary.withOpacity(0.15),
+                        color: theme.colorScheme.primary.withValues(alpha: 0.15),
                         blurRadius: 15,
                         spreadRadius: 1,
                       ),
@@ -739,9 +736,9 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.primary.withOpacity(0.12),
+                    color: theme.colorScheme.primary.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(100),
-                    border: Border.all(color: theme.colorScheme.primary.withOpacity(0.15), width: 1),
+                    border: Border.all(color: theme.colorScheme.primary.withValues(alpha: 0.15), width: 1),
                   ),
                   child: Text(
                     'FACULTY PORTAL',
@@ -892,7 +889,7 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
           decoration: BoxDecoration(
             borderRadius: AppRadius.mdR,
             color: isActive
-                ? activeColor.withOpacity(isDark ? 0.12 : 0.06)
+                ? activeColor.withValues(alpha: isDark ? 0.12 : 0.06)
                 : Colors.transparent,
           ),
           padding: const EdgeInsets.symmetric(horizontal: AppSpace.md, vertical: 12.0),
@@ -1072,17 +1069,7 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
 
                           // 1. Device ID verification
                           if (widget.teacher.role != 'admin') {
-                            String? currentDeviceId;
-                            try {
-                              final deviceInfo = DeviceInfoPlugin();
-                              if (Platform.isAndroid) {
-                                final androidInfo = await deviceInfo.androidInfo;
-                                currentDeviceId = androidInfo.id;
-                              } else if (Platform.isIOS) {
-                                final iosInfo = await deviceInfo.iosInfo;
-                                currentDeviceId = iosInfo.identifierForVendor;
-                              }
-                            } catch (_) {}
+                            final currentDeviceId = await DeviceIdentity.current();
 
                             if (currentDeviceId != null && widget.teacher.deviceAppId != null && widget.teacher.deviceAppId != currentDeviceId) {
                               if (context.mounted) {
@@ -1105,28 +1092,18 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
                           // 2. Geofence presence check for the allocated office venue
                           bool insideAllocatedOffice = false;
                           app_models.Venue? allocatedVenue;
+                          String failure = '';
                           try {
-                            final locationService = LocationService();
-                            final position = await locationService.getCurrentPositionWithPermissions();
                             if (officeVenueId != null) {
                               allocatedVenue = await VenueRepository().getVenueById(officeVenueId);
                               if (allocatedVenue != null) {
-                                if (allocatedVenue.hasPolygon) {
-                                  insideAllocatedOffice = locationService.isPointInPolygon(
-                                    position.latitude,
-                                    position.longitude,
-                                    allocatedVenue.polygonCorners!,
-                                  );
-                                } else {
-                                  // fallback to radius check if no polygon corners
-                                  final distance = Geolocator.distanceBetween(
-                                    position.latitude,
-                                    position.longitude,
-                                    allocatedVenue.latitude,
-                                    allocatedVenue.longitude,
-                                  );
-                                  insideAllocatedOffice = distance <= allocatedVenue.radius;
-                                }
+                                final reading = await VolumetricVerifier().verify(
+                                  allocatedVenue,
+                                  source: 'clock-in',
+                                  allowCircle: true,
+                                );
+                                insideAllocatedOffice = reading.result.decision.isInside;
+                                failure = reading.result.decision.message;
                               }
                             }
                           } catch (e) {
@@ -1158,7 +1135,7 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
                                   title: const Text('Geofence Verification Failed'),
                                   content: Text(
                                     allocatedVenue != null
-                                        ? 'You must be physically present inside your allocated office venue ("${allocatedVenue.name}") to clock in.'
+                                        ? 'You must be physically present inside your allocated office venue ("${allocatedVenue.name}") to clock in. $failure'
                                         : 'No allocated office venue found. Please contact your Admin.',
                                   ),
                                   actions: [

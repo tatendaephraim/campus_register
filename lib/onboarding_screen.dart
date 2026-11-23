@@ -115,10 +115,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                             height: 280,
                             width: 280,
                             decoration: BoxDecoration(
-                              color: page.accentColor.withOpacity(0.05),
+                              color: page.accentColor.withValues(alpha: 0.05),
                               shape: BoxShape.circle,
                               border: Border.all(
-                                color: page.accentColor.withOpacity(0.15),
+                                color: page.accentColor.withValues(alpha: 0.15),
                                 width: 2,
                               ),
                             ),

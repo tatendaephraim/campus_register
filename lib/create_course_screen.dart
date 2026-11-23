@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'course.dart';
 import 'teacher.dart';
@@ -347,7 +346,7 @@ class _CreateCourseScreenState extends State<CreateCourseScreen> {
           return ListTile(
             contentPadding: EdgeInsets.zero,
             leading:
-                Icon(Icons.location_off_rounded, color: AppColors.slate400),
+                const Icon(Icons.location_off_rounded, color: AppColors.slate400),
             title: Text('No venues created',
                 style: AppType.body(context,
                     weight: FontWeight.w600,
@@ -367,7 +366,7 @@ class _CreateCourseScreenState extends State<CreateCourseScreen> {
         }).toList();
 
         return DropdownButtonFormField<int>(
-          value: _selectedVenueId,
+          initialValue: _selectedVenueId,
           decoration: const InputDecoration(
             labelText: 'Venue',
             prefixIcon: Icon(Icons.spatial_tracking_rounded),

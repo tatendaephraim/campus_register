@@ -27,7 +27,7 @@ In practice, this means a student can only check in when they are physically ins
 
 ### Primary user outcomes
 
-- secure, tamper-resistant attendance capture,
+- attendance capture that resists casual fraud,
 - offline support in low-connectivity environments,
 - easy reporting for instructors and administrators,
 - cloud backup and spreadsheet export for operational visibility.
@@ -89,7 +89,8 @@ The app logic is centered in [lib](lib), with the following major areas:
 - [lib/location_service.dart](lib/location_service.dart): geolocation and polygon containment logic.
 - [lib/check_in_service.dart](lib/check_in_service.dart): active class detection based on timetable data.
 - [lib/services/biometric_service.dart](lib/services/biometric_service.dart): biometric authentication wrapper.
-- [lib/services/altitude_service.dart](lib/services/altitude_service.dart): altitude handling and floor logic.
+- [lib/services/altitude_service.dart](lib/services/altitude_service.dart) and [lib/domain/altitude_filter.dart](lib/domain/altitude_filter.dart): GPS and barometer fusion.
+- [lib/domain/volumetric_check.dart](lib/domain/volumetric_check.dart) and [lib/services/volumetric_verifier.dart](lib/services/volumetric_verifier.dart): the 3D decision and its single enforcement point.
 - [lib/student_dashboard_screen.dart](lib/student_dashboard_screen.dart): main student experience and check-in flow.
 - [lib/admin_dashboard_screen.dart](lib/admin_dashboard_screen.dart): admin operations and analytics.
 - [lib/attendance_repository.dart](lib/attendance_repository.dart): attendance reporting and stats.
@@ -152,7 +153,7 @@ The most important technical differentiator is that the app is not a simple chec
 
 ### 7.1 3D volumetric geofencing
 
-The core security mechanism is implemented in [lib/location_service.dart](lib/location_service.dart).
+The core mechanism is implemented in [lib/domain/volumetric_check.dart](lib/domain/volumetric_check.dart) and applied through [lib/services/volumetric_verifier.dart](lib/services/volumetric_verifier.dart).
 
 The app validates attendance using three layers:
 
@@ -166,8 +167,10 @@ The app validates attendance using three layers:
    - this compensates for GPS noise and indoor signal drift.
 
 3. Vertical validation
-   - the app compares the phone’s altitude with the venue baseline,
-   - sign-in is blocked if a student is too far above or below the defined room level.
+   - GPS altitude and the barometer are fused by a Kalman filter,
+   - the app computes the probability that the phone is inside the venue's height band,
+   - sign-in is refused when the phone is clearly above or below the band, and repeated when the altitude is uncertain,
+   - adjacent floors are not reliably separated; see the README.
 
 This is the app’s “secret sauce”: it turns attendance from a loose location check into a 3D boundary verification process.
 
@@ -177,9 +180,9 @@ The student experience does not rely on passwords. Instead, identity is tied to 
 
 The app uses:
 
-- device_info_plus to capture a hardware identifier,
+- the Android ID, or the iOS vendor ID, as the device identifier,
 - a temporary registration code to bind a student profile to that device,
-- local_auth to require a fingerprint or face unlock before attendance is finalized.
+- local_auth to require a fingerprint or face match, without PIN fallback, before attendance is finalized.
 
 This means the identity proof is not just a username and password; it is a blend of device identity and biometric confirmation.
 
@@ -193,7 +196,7 @@ This prevents casual or retrospective check-ins and makes attendance timestamps 
 
 The app is built to work even when connectivity is poor or absent. The repositories and database helpers are designed to:
 
-- save attendance locally immediately,
+- try the server first and always save locally,
 - keep the local cache as the operational source during offline periods,
 - sync to Supabase when possible,
 - export to Google Sheets as a secondary reporting layer.
@@ -260,7 +263,7 @@ The app uses a hybrid sync strategy:
 ### Local-first
 
 - SQLite is the primary operational store.
-- Attendance writes happen immediately.
+- Attendance that cannot reach the server is saved under a negative local identifier and uploaded later, in order and without duplicates.
 - The app remains usable even when the network is down.
 
 ### Cloud sync
@@ -305,7 +308,7 @@ Students are not authenticated with a password. The app binds them to a hardware
 
 ### Multi-profile support
 
-The student dashboard can resolve multiple student profiles tied to the same device, which makes the app flexible for cases where one device is associated with multiple course-linked identities.
+One student may hold several course profiles on the same phone. A second student is refused.
 
 ### Attendance analytics
 
@@ -319,7 +322,7 @@ The app is a standard Flutter project.
 
 ### Prerequisites
 
-- Flutter SDK 3.3+
+- Flutter SDK with Dart 3.10 or later
 - Android Studio or VS Code with Flutter support
 - emulator or physical device
 
@@ -353,7 +356,7 @@ The current build is already functional and differentiated, but there are clear 
 - add server-side validation to prevent tampering at the backend layer,
 - introduce signed attendance tokens for stronger auditability,
 - improve sync reconciliation between local SQLite and remote Supabase,
-- add more explicit conflict handling and offline queue management,
+- add a shared pressure reference in the room to separate adjacent floors,
 - extend biometric security with stronger hardware key enforcement,
 - add richer analytics dashboards and export formats.
 

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -35,7 +36,7 @@ class TimetableRepository {
 
       return slots;
     } catch (e) {
-      print('⚠️ Supabase fetch timetable slots error: $e');
+      debugPrint('⚠️ Supabase fetch timetable slots error: $e');
     }
 
     // Fallback to SQLite
@@ -71,9 +72,9 @@ class TimetableRepository {
           .single();
       
       supabaseSlot = TimetableSlot.fromMap(response);
-      print('✅ Synced TimetableSlot to Supabase: ID=${supabaseSlot.id}');
+      debugPrint('✅ Synced TimetableSlot to Supabase: ID=${supabaseSlot.id}');
     } catch (e) {
-      print('⚠️ Supabase TimetableSlot insert error: $e');
+      debugPrint('⚠️ Supabase TimetableSlot insert error: $e');
     }
 
     // 2. Save locally (using Supabase-generated ID if available)
@@ -101,9 +102,9 @@ class TimetableRepository {
           .from('timetable_slots')
           .delete()
           .eq('id', slotId);
-      print('✅ Deleted TimetableSlot from Supabase: ID=$slotId');
+      debugPrint('✅ Deleted TimetableSlot from Supabase: ID=$slotId');
     } catch (e) {
-      print('⚠️ Supabase TimetableSlot delete error: $e');
+      debugPrint('⚠️ Supabase TimetableSlot delete error: $e');
     }
 
     // 2. Delete locally

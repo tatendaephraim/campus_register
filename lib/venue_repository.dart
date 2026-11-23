@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -30,9 +31,9 @@ class VenueRepository {
           .single();
       
       supabaseVenue = Venue.fromMap(response);
-      print('✅ Synced Venue to Supabase: ${supabaseVenue.name}');
+      debugPrint('✅ Synced Venue to Supabase: ${supabaseVenue.name}');
     } catch (e) {
-      print('⚠️ Supabase Venue upsert error: $e');
+      debugPrint('⚠️ Supabase Venue upsert error: $e');
     }
 
     // 2. Save locally (using Supabase-generated ID if available)
@@ -70,7 +71,7 @@ class VenueRepository {
       }
       await batch.commit(noResult: true);
     } catch (e) {
-      print('⚠️ Supabase fetch and sync venues error: $e');
+      debugPrint('⚠️ Supabase fetch and sync venues error: $e');
     }
 
     // 2. Always query SQLite as the single source of truth
@@ -103,7 +104,7 @@ class VenueRepository {
         return venue;
       }
     } catch (e) {
-      print('⚠️ Supabase fetch venue by ID error: $e');
+      debugPrint('⚠️ Supabase fetch venue by ID error: $e');
     }
 
     // Fallback to SQLite
@@ -127,9 +128,9 @@ class VenueRepository {
     // 1. Try deleting from Supabase
     try {
       await _supabase.from('venues').delete().eq('id', venueId);
-      print('✅ Deleted Venue from Supabase: $venueId');
+      debugPrint('✅ Deleted Venue from Supabase: $venueId');
     } catch (e) {
-      print('⚠️ Supabase Venue delete error: $e');
+      debugPrint('⚠️ Supabase Venue delete error: $e');
     }
 
     // 2. Delete locally

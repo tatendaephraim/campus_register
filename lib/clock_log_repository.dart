@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'database_helper.dart';
@@ -27,9 +28,9 @@ class ClockLogRepository {
           .select()
           .single();
       supabaseLog = ClockLog.fromMap(response);
-      print('✅ Synced clock-in to Supabase');
+      debugPrint('✅ Synced clock-in to Supabase');
     } catch (e) {
-      print('⚠️ Supabase clock-in error: $e');
+      debugPrint('⚠️ Supabase clock-in error: $e');
     }
 
     // 2. Save locally
@@ -58,9 +59,9 @@ class ClockLogRepository {
           .from('clock_logs')
           .update(updates)
           .eq('id', logId);
-      print('✅ Synced clock-out to Supabase');
+      debugPrint('✅ Synced clock-out to Supabase');
     } catch (e) {
-      print('⚠️ Supabase clock-out error: $e');
+      debugPrint('⚠️ Supabase clock-out error: $e');
     }
 
     // 2. Save locally
@@ -89,7 +90,7 @@ class ClockLogRepository {
         return ClockLog.fromMap(response.first as Map<String, dynamic>);
       }
     } catch (e) {
-      print('⚠️ Supabase getActiveLog error: $e');
+      debugPrint('⚠️ Supabase getActiveLog error: $e');
     }
 
     // 2. Fallback to SQLite
@@ -114,9 +115,9 @@ class ClockLogRepository {
           .from('clock_logs')
           .update({'early_leave_approved': 1})
           .eq('id', logId);
-      print('✅ Approved early leave on Supabase');
+      debugPrint('✅ Approved early leave on Supabase');
     } catch (e) {
-      print('⚠️ Supabase approveEarlyLeave error: $e');
+      debugPrint('⚠️ Supabase approveEarlyLeave error: $e');
     }
 
     final db = await dbHelper.database;
@@ -139,7 +140,7 @@ class ClockLogRepository {
           .order('clock_in', ascending: false);
       return response.map((item) => ClockLog.fromMap(item as Map<String, dynamic>)).toList();
     } catch (e) {
-      print('⚠️ Supabase getLogs error: $e');
+      debugPrint('⚠️ Supabase getLogs error: $e');
     }
 
     final db = await dbHelper.database;
