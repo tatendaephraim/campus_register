@@ -1,89 +1,36 @@
 import 'package:geolocator/geolocator.dart';
-import '../data/models/venue.dart';
 
 class LocationService {
-  Future<Position> getCurrentLocation() async {
+  Future<Position?> getCurrentLocation() async {
+    final hasPermission = await _handlePermission();
+    if (!hasPermission) return null;
+
     return await Geolocator.getCurrentPosition(
-        desiredAccuracy:
-            LocationAccuracy.best // Best accuracy is required for altitude
-        );
+      desiredAccuracy: LocationAccuracy.high,
+    );
   }
 
-  double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
-    return Geolocator.distanceBetween(lat1, lon1, lat2, lon2);
+  bool isWithinRange(Position? current, double targetLat, double targetLon, [double radius = 100.0]) {
+  if (current == null) return false;
+  final distance = Geolocator.distanceBetween(
+  current.latitude,
+  current.longitude,
+  targetLat,
+  targetLon,
+  );
+  return distance <= radius;
   }
 
-  /// Check if a point is inside a polygon using ray casting algorithm
-  bool isPointInPolygon(
-      double latitude, double longitude, List<LatLng> polygon) {
-    if (polygon.length < 3) return false;
+  Future<bool> _handlePermission() async {
+  bool locationService = await Geolocator.isLocationServiceEnabled();
+  if (!locationService) return false;
 
-    bool inside = false;
-    int j = polygon.length - 1;
-
-    for (int i = 0; i < polygon.length; i++) {
-      double xi = polygon[i].latitude;
-      double yi = polygon[i].longitude;
-      double xj = polygon[j].latitude;
-      double yj = polygon[j].longitude;
-
-      bool intersect = ((yi > longitude) != (yj > longitude)) &&
-          (latitude < (xj - xi) * (longitude - yi) / (yj - yi) + xi);
-
-      if (intersect) inside = !inside;
-      j = i;
-    }
-
-    return inside;
+  LocationPermission permission = await Geolocator.checkPermission();
+  if (permission == LocationPermission.denied) {
+  permission = await Geolocator.requestPermission();
+  if (permission == LocationPermission.denied) return false;
   }
-
-  bool isAtVenue(
-      Position current, double targetLat, double targetLong, double targetAlt) {
-    return isAtVenueWithTolerance(
-        current, targetLat, targetLong, targetAlt, 100.0, 50.0);
-  }
-
-  bool isAtVenueWithTolerance(
-      Position current,
-      double targetLat,
-      double targetLong,
-      double targetAlt,
-      double horizontalRadius,
-      double verticalTolerance,
-      {List<LatLng>? polygonCorners}) {
-    // 2. Check Vertical Distance (Altitude) first
-    double verticalDifference = (current.altitude - targetAlt).abs();
-    bool altitudeMatch = verticalDifference <= verticalTolerance;
-
-    // 1. Check Horizontal Distance
-    bool horizontalMatch;
-    String horizontalMethod;
-
-    if (polygonCorners != null && polygonCorners.length >= 3) {
-      // Use polygon checking
-      horizontalMatch =
-          isPointInPolygon(current.latitude, current.longitude, polygonCorners);
-      horizontalMethod = 'Polygon (${polygonCorners.length} corners)';
-    } else {
-      // Use circular radius checking
-      double distance = Geolocator.distanceBetween(
-          current.latitude, current.longitude, targetLat, targetLong);
-      horizontalMatch = distance <= horizontalRadius;
-      horizontalMethod =
-          'Radius ${distance.toStringAsFixed(1)}m (max: ${horizontalRadius.toStringAsFixed(0)}m)';
-    }
-
-    print('📍 Location Debug:');
-    print('   Method: $horizontalMethod');
-    print('   Current: ${current.latitude}, ${current.longitude}');
-    print('   Target: $targetLat, $targetLong');
-    print('   Horizontal match: ${horizontalMatch ? "✓" : "✗"}');
-    print(
-        '   Altitude diff: ${verticalDifference.toStringAsFixed(1)}m (max: ${verticalTolerance.toStringAsFixed(0)}m)');
-    print('   Current alt: ${current.altitude.toStringAsFixed(1)}m');
-    print('   Target alt: ${targetAlt.toStringAsFixed(1)}m');
-    print('   Altitude match: ${altitudeMatch ? "✓" : "✗"}');
-
-    return horizontalMatch && altitudeMatch;
+  if (permission == LocationPermission.deniedForever) return false;
+  return true;
   }
 }
